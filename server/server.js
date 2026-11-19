@@ -23,9 +23,24 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = process.env.DATA_DIR
-  ? path.resolve(process.env.DATA_DIR)
-  : path.join(__dirname, 'data');
+/* Куда писать базу.
+   1) DATA_DIR из окружения (Render, Docker);
+   2) папка /data — единственное постоянное хранилище Amvera:
+      всё остальное там стирается при перезапуске;
+   3) рядом с сервером (локальный запуск). */
+function pickDataDir() {
+  if (process.env.DATA_DIR) return path.resolve(process.env.DATA_DIR);
+  if (process.platform !== 'win32') {
+    try {
+      if (fs.existsSync('/data') && fs.statSync('/data').isDirectory()) {
+        return path.join('/data', 'refs-books');
+      }
+    } catch (e) {}
+  }
+  return path.join(__dirname, 'data');
+}
+
+const DATA_DIR = pickDataDir();
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT) || 3000;
 
