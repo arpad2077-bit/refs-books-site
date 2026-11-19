@@ -378,6 +378,16 @@
     route();
     bootResume();
 
+    /* с сервером: забрать более новые данные профиля и обновить страницу */
+    if (Acc.syncOnBoot) {
+      Acc.syncOnBoot().then(function (changed) {
+        if (changed && !sessionStorage.getItem('refbooks.reloaded')) {
+          try { sessionStorage.setItem('refbooks.reloaded', '1'); } catch (e) {}
+          location.reload();
+        }
+      }).catch(function () {});
+    }
+
     /* повторный заход вошедшего пользователя — сразу на интерактивную карту */
     if (Acc.isLoggedIn() && Acc.data.onboarded) {
       var h0 = location.hash.replace(/^#\/?/, '');
@@ -491,13 +501,8 @@
        чтобы вошли именно его прогресс, закладки и подписка */
     try { localStorage.setItem('refbooks.hello', JSON.stringify({ name: name || '' })); } catch (e) {}
     var next = authState.next;
-    if (next === 'onboarding') {
-      location.hash = '#/';
-      location.reload();
-      return;
-    }
-    location.hash = next === 'profile' ? '#/profile' : '#/map';
-    location.reload();
+    location.hash = (next === 'onboarding') ? '#/' : (next === 'profile' ? '#/profile' : '#/map');
+    setTimeout(function () { document.location.reload(); }, 30);
   }
 
   function renderAuth() {
@@ -1293,20 +1298,7 @@
 
   function bindAccount() {
     var sw = $('#acc-switch');
-    if (sw) sw.onclick = function () {
-      ask('Сменить профиль', Acc.accounts().filter(function (x) { return !Acc.user() || x.id !== Acc.user().id; })
-        .map(function (x) { return { v: x.id, label: x.name, sub: x.email }; })
-        .concat([
-          { v: '__login', label: 'Войти в другой аккаунт', sub: 'по почте и паролю' },
-          { v: '__new', label: 'Создать новый профиль', sub: 'регистрация' }
-        ]), 'Каждый профиль хранит свои книги, закладки и подписку.')
-        .then(function (v) {
-          if (!v) return;
-          if (v === '__login') { location.hash = '#/login'; return; }
-          if (v === '__new') { location.hash = '#/register'; return; }
-          enterProfile(v);
-        });
-    };
+    if (sw) sw.onclick = function () { openSwitch(); };
     var lo = $('#acc-logout');
     if (lo) lo.onclick = function () {
       ask('Выйти из аккаунта?', [
@@ -1324,6 +1316,32 @@
     Acc.enter(id, Acc.remember !== false).catch(function () {}).then(function () { location.reload(); });
   }
 
+  /* с сервером профиль меняется только по почте и паролю */
+  function openSwitch() {
+    var online = Acc.server && Acc.server.state === 'up';
+    if (online) {
+      ask('Сменить профиль', [
+        { v: '__login', label: 'Войти в другой аккаунт', sub: 'по почте и паролю', prim: true },
+        { v: '__new', label: 'Создать новый профиль', sub: 'регистрация' }
+      ], 'Аккаунты хранятся на сервере — можно войти с любого устройства.').then(function (v) {
+        if (v === '__login') location.hash = '#/login';
+        else if (v === '__new') location.hash = '#/register';
+      });
+      return;
+    }
+    ask('Сменить профиль', Acc.accounts().filter(function (x) { return !Acc.user() || x.id !== Acc.user().id; })
+      .map(function (x) { return { v: x.id, label: x.name, sub: x.email }; })
+      .concat([
+        { v: '__login', label: 'Войти в другой аккаунт', sub: 'по почте и паролю' },
+        { v: '__new', label: 'Создать новый профиль', sub: 'регистрация' }
+      ]), 'Каждый профиль хранит свои книги, закладки и подписку.')
+      .then(function (v) {
+        if (!v) return;
+        if (v === '__login') { location.hash = '#/login'; return; }
+        if (v === '__new') { location.hash = '#/register'; return; }
+        enterProfile(v);
+      });
+  }
   function renderStatusChip() {
     var sub = Acc.isSubscriber();
     var u = Acc.user();
@@ -2313,6 +2331,8 @@
     $('#dlg').addEventListener('close', function () { if (this.returnValue === 'ok') doUpload(); });
 
     bindKeys();
+    /* вкладку закрыли без «запомнить» — на сервере завершаем вход */
+    window.addEventListener('pagehide', function () { if (Acc.endSession) Acc.endSession(); });
     window.addEventListener('hashchange', function () {
       route();
       if (flyPending && S.route.name === 'map') { flyPending = false; setTimeout(doFly, 60); }

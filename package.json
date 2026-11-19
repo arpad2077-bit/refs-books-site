@@ -1,0 +1,13 @@
+{
+  "name": "refs-books",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Refs.Books — карта литературных отсылок: сайт и API аккаунтов",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

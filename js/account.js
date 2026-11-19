@@ -85,6 +85,42 @@
 
   function dataKey() { return auth.current ? KEY + '.' + auth.current : KEY; }
 
+  /* ---------------- сервер ----------------
+     Если сайт открыт с сервера (server/server.js) — аккаунты живут там
+     и работают на любом устройстве. Если сервера нет (файл на диске,
+     GitHub Pages) — работает прежний локальный режим. */
+  var Srv = {
+    state: 'unknown',      // unknown | up | down
+    checked: false,
+    ping: function () {
+      if (Srv.checked) return Promise.resolve(Srv.state);
+      Srv.checked = true;
+      return fetch('/api/ping', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          Srv.state = (d && d.server) ? 'up' : 'down';
+          return Srv.state;
+        })
+        .catch(function () { Srv.state = 'down'; return 'down'; });
+    },
+    req: function (method, url, body, tok) {
+      var h = { 'Content-Type': 'application/json' };
+      if (tok) h['Authorization'] = 'Bearer ' + tok;
+      return fetch(url, {
+        method: method,
+        headers: h,
+        body: body ? JSON.stringify(body) : undefined
+      }).then(function (r) {
+        return r.text().then(function (t) {
+          var b = null;
+          try { b = t ? JSON.parse(t) : null; } catch (e) {}
+          return { status: r.status, body: b };
+        });
+      });
+    }
+  };
+  Srv.ping();
+
   function normEmail(e) { return String(e || '').trim().toLowerCase(); }
   function hexOf(buf) {
     var b = new Uint8Array(buf), s = '';
@@ -151,6 +187,20 @@
     if (name.length < 2) return Promise.resolve({ ok: false, error: 'Имя профиля — минимум 2 символа' });
     if (!validEmail(email)) return Promise.resolve({ ok: false, error: 'Проверьте электронную почту' });
     if (pass.length < 6) return Promise.resolve({ ok: false, error: 'Пароль — минимум 6 символов' });
+
+    /* есть сервер — аккаунт создаётся там и работает на любом устройстве */
+    if (Srv.state === 'up') {
+      return Srv.req('POST', '/api/register', {
+        name: name, email: email, password: pass,
+        startData: remoteStartData(), updatedAt: Date.now()
+      }).then(function (r) {
+        if (r.status !== 200 || !r.body || !r.body.ok) {
+          return { ok: false, error: (r.body && r.body.error) || 'Не удалось создать аккаунт' };
+        }
+        return adoptServerUser(r.body, name, rememberOf(d));
+      }, function () { return onlineFallback(); });
+    }
+
     if (auth.accounts.some(function (a) { return a.email === email; })) {
       return Promise.resolve({ ok: false, error: 'Аккаунт с такой почтой уже есть — войдите в него' });
     }
@@ -171,6 +221,16 @@
 
   function login(email, password, remember) {
     email = normEmail(email);
+
+    if (Srv.state === 'up') {
+      return Srv.req('POST', '/api/login', { email: email, password: password }).then(function (r) {
+        if (r.status !== 200 || !r.body || !r.body.ok) {
+          return { ok: false, error: (r.body && r.body.error) || 'Не удалось войти' };
+        }
+        return adoptServerUser(r.body, (r.body.user || {}).name, remember !== false);
+      }, function () { return onlineFallback(); });
+    }
+
     var acc = null;
     for (var i = 0; i < auth.accounts.length; i++) if (auth.accounts[i].email === email) acc = auth.accounts[i];
     if (!acc) return Promise.resolve({ ok: false, error: 'Аккаунт с такой почтой не найден' });
@@ -180,12 +240,133 @@
     });
   }
 
+  function rememberOf(d) { return d.remember !== false; }
+  function onlineFallback() {
+    return { ok: false, error: 'Сервер не отвечает — попробуйте ещё раз через минуту' };
+  }
+
+  /* ---- сервер: вход, токен и синхронизация профиля ---- */
+  var SRV_USER_KEY = 'refbooks.serverUser';
+
+  function adoptServerUser(body, name, remember) {
+    var u = body.user || {};
+    var cur = null;
+    try { cur = JSON.parse(localStorage.getItem(SRV_USER_KEY) || 'null'); } catch (e) {}
+    if (cur && cur.id && cur.id !== u.id) {
+      /* выходим из прежнего профиля — его данные остаются под своим ключом */
+      try { localStorage.setItem(KEY + '.' + cur.id, JSON.stringify(A)); } catch (e) {}
+    }
+    try {
+      localStorage.setItem(SRV_USER_KEY, JSON.stringify({
+        id: u.id, name: u.name, email: u.email,
+        token: body.token, remember: remember !== false
+      }));
+      if (remember === false) sessionStorage.setItem('refbooks.srvSession', u.id);
+      else sessionStorage.removeItem('refbooks.srvSession');
+    } catch (e) {}
+    /* разные аккаунты на одном устройстве не должны смешивать данные:
+       у каждого свой ключ хранения, данные другого профиля не трогаем */
+    auth.current = u.id;
+    auth.remember = remember !== false;
+    if (!auth.accounts.some(function (a) { return a.id === u.id; })) {
+      auth.accounts.push({ id: u.id, name: u.name, email: u.email, pass: null, createdAt: Date.now() });
+    }
+    saveAuth();
+    /* данные, записанные до входа, остаются за первым аккаунтом */
+    return pull().then(function () { return { ok: true, user: user() }; });
+  }
+
+  function remoteStartData() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return null;
+      var d = JSON.parse(raw);
+      return d && d.onboarded ? d : null;
+    } catch (e) { return null; }
+  }
+
+  /* забрать данные профиля с сервера (или отправить свои, если сервер пуст) */
+  function pull() {
+    var su = serverUser();
+    if (!su) return Promise.resolve(false);
+    return Srv.req('GET', '/api/data', null, su.token).then(function (r) {
+      if (r.status !== 200 || !r.body || !r.body.ok) return false;
+      var d = r.body.data;
+      if (d && typeof d === 'object') {
+        try { localStorage.setItem(KEY + '.' + su.id, JSON.stringify(migrate(d))); } catch (e) {}
+      } else {
+        A.lastSyncAt = 0;
+        push(true);
+      }
+      return true;
+    }, function () { return false; });
+  }
+
+  function migrate(d) {
+    var b = blank();
+    for (var k in b) if (!(k in d)) d[k] = b[k];
+    d.prefs = Object.assign(b.prefs, d.prefs || {});
+    return d;
+  }
+
+  var pushTimer = null;
+  function push(immediate) {
+    var su = serverUser();
+    if (!su || Srv.state !== 'up') return;
+    clearTimeout(pushTimer);
+    var go = function () {
+      A.lastSyncAt = Date.now();
+      var payload = {};
+      for (var k in A) if (k !== '_synced') payload[k] = A[k];
+      Srv.req('PUT', '/api/data', { data: payload, updatedAt: A.lastSyncAt }, su.token).catch(function () {});
+    };
+    if (immediate) go(); else pushTimer = setTimeout(go, 1200);
+  }
+
+  function serverUser() {
+    try {
+      var su = JSON.parse(localStorage.getItem(SRV_USER_KEY) || 'null');
+      if (su && su.id) return su;
+    } catch (e) {}
+    return null;
+  }
+
+  /* «не запоминать»: вход живёт, пока не закрыта вкладка */
+  function checkServerSession() {
+    var su = serverUser();
+    if (!su) return;
+    if (su.remember !== false) return;
+    var alive = false;
+    try { alive = sessionStorage.getItem('refbooks.srvSession') === su.id; } catch (e) {}
+    if (!alive) {
+      try { localStorage.removeItem(SRV_USER_KEY); } catch (e) {}
+      auth.current = null;
+      saveAuth();
+    }
+  }
+  checkServerSession();
+
   function logout() {
-    save();                      // сохраняем данные текущего профиля
+    var su = serverUser();
+    if (su && su.token) Srv.req('POST', '/api/logout', null, su.token).catch(function () {});
+    try { localStorage.removeItem(SRV_USER_KEY); } catch (e) {}
+    if (!su) save();                      // сохраняем локальные данные профиля
     auth.current = null;
     saveAuth();
     try { sessionStorage.removeItem(SESS_KEY); } catch (e) {}
     return Promise.resolve();
+  }
+
+  /* вкладка закрыта без «запомнить» — на сервере считаем, что вышли */
+  function endSession() {
+    var su = serverUser();
+    if (!su || su.remember !== false) return;
+    try {
+      var payload = { token: su.token };
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/logout', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+      }
+    } catch (e) {}
   }
 
   var A = load();
@@ -207,6 +388,34 @@
   function save() {
     try { localStorage.setItem(dataKey(), JSON.stringify(A)); } catch (e) {}
     emit();
+    push(false);
+  }
+
+  /* синхронизация при открытии сайта: если на сервере данные новее —
+     забираем их (и перезагружаемся), иначе отправляем свои */
+  function syncOnBoot() {
+    var su = serverUser();
+    if (!su || !su.token) return Promise.resolve(false);
+    return Srv.ping().then(function (st) {
+      if (st !== 'up') return false;
+      return Srv.req('GET', '/api/data', null, su.token).then(function (r) {
+        if (r.status === 401) {
+          try { localStorage.removeItem(SRV_USER_KEY); } catch (e) {}
+          return false;
+        }
+        if (r.status !== 200 || !r.body || !r.body.ok) return false;
+        var remote = r.body.data, rAt = Number(r.body.updatedAt) || 0;
+        if (remote && rAt > (Number(A.lastSyncAt) || 0)) {
+          try {
+            localStorage.setItem(KEY + '.' + su.id, JSON.stringify(migrate(remote)));
+            localStorage.setItem('refbooks.booted', '1');
+          } catch (e) {}
+          return true;                       // данные обновились — перезагрузимся
+        }
+        push(true);
+        return false;
+      });
+    });
   }
 
   /* --- подписка на изменения --- */
@@ -483,6 +692,7 @@
     /* аккаунты */
     isLoggedIn: isLoggedIn, user: user, accounts: accounts,
     get remember() { return auth.remember !== false; },
+    server: Srv, syncOnBoot: syncOnBoot, endSession: endSession,
     register: register, login: login, logout: logout, enter: enter,
     validEmail: validEmail,
 

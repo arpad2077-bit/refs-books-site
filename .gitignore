@@ -1,0 +1,8 @@
+# зависимости и данные
+node_modules/
+server/data/
+*.tmp
+
+# системное
+.DS_Store
+Thumbs.db
