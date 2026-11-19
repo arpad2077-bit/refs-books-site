@@ -366,9 +366,14 @@
       decodeURIComponent(m[1]).split(',').forEach(function (id) { if (id) S.open.add(id.trim()); });
     }
     if ((m = q.match(/[?&]invite=([^&#]+)/))) Acc.acceptInvite(decodeURIComponent(m[1]));
-    if (/[?&]dev=1/.test(q)) localStorage.setItem(DEVMODE_KEY, '1');
+    /* ?key=… — вход в режим разработчика по секретному ключу.
+       Прежняя ссылка ?dev=1 режим больше не включает. */
+    if ((m = q.match(/[?&#]key=([^&#]+)/))) {
+      if (devKeyOk(decodeURIComponent(m[1]))) localStorage.setItem(DEVMODE_KEY, DEV_FLAG);
+      else { localStorage.removeItem(DEVMODE_KEY); setTimeout(function () { toast('Ключ разработчика неверный'); }, 600); }
+    }
     if (/[?&]dev=0/.test(q)) localStorage.removeItem(DEVMODE_KEY);
-    setDev(localStorage.getItem(DEVMODE_KEY) === '1', true);
+    setDev(localStorage.getItem(DEVMODE_KEY) === DEV_FLAG, true);
 
     Acc.on(function () { renderStatusChip(); Ads.fill(); });
     renderStatusChip();
@@ -472,10 +477,60 @@
     }
   }
 
+  /* ================= ключ разработчика =================
+     В режим разработчика входит только владелец сайта.
+     В коде лежит не ключ, а его отпечаток (djb2 от «a|ключ»),
+     поэтому подсмотреть ключ в исходниках нельзя. */
+  var DEV_KEY_HASH = 'h5dee84b0';
+  /* отметка «режим включён» в браузере. Это не «1», а значение,
+     которое нельзя угадать, — иначе режим включался бы в настройках */
+  var DEV_FLAG = 'hfd21bcd5';
+
+  function djb2(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return 'h' + h.toString(16);
+  }
+  function devKeyOk(k) {
+    k = String(k || '').trim();
+    return !!k && djb2('a|' + k) === DEV_KEY_HASH;
+  }
+
+  /* запрос ключа: то же окно, что и у остальных вопросов */
+  function askDevKey() {
+    return new Promise(function (resolve) {
+      var dlg = $('#ask');
+      var done = false;
+      var finish = function (v) { if (!done) { done = true; resolve(v); } };
+      $('#ask-body').innerHTML =
+        '<h2>Режим разработчика</h2>' +
+        '<p class="dlg-hint">Введите ключ разработчика.</p>' +
+        '<label class="field"><span>Ключ</span>' +
+          '<input id="dev-key-in" type="password" autocomplete="off" spellcheck="false" placeholder="Ключ разработчика"></label>' +
+        '<div class="dlg-foot"><button type="button" class="tb" data-k="no">Отмена</button>' +
+          '<button type="button" class="tb prim" data-k="yes">Войти</button></div>';
+      var inp = $('#dev-key-in');
+      var submit = function () { var v = inp.value; finish(v); dlg._guard = true; dlg.close(); };
+      $$('#ask-body [data-k]').forEach(function (b) {
+        b.onclick = function () {
+          if (b.getAttribute('data-k') === 'yes') return submit();
+          finish(null); dlg._guard = true; dlg.close();
+        };
+      });
+      inp.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } };
+      dlg.onclose = function () {
+        if (dlg._guard) { dlg._guard = false; return; }
+        finish(null);
+      };
+      if (!dlg.open) dlg.showModal();
+      setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
+    });
+  }
+
   /* ================= режим разработчика ================= */
   function setDev(on, silent) {
     S.dev = !!on;
-    if (on) localStorage.setItem(DEVMODE_KEY, '1'); else localStorage.removeItem(DEVMODE_KEY);
+    if (on) localStorage.setItem(DEVMODE_KEY, DEV_FLAG); else localStorage.removeItem(DEVMODE_KEY);
     document.body.classList.toggle('dev-mode', S.dev);
     applyMaint();
     if (!silent) {
@@ -2346,9 +2401,16 @@
 
   function bindKeys() {
     document.addEventListener('keydown', function (ev) {
-      /* Ctrl+Shift+D — режим разработчика */
+      /* Ctrl+Shift+D — режим разработчика (нужен ключ) */
       if (ev.ctrlKey && ev.shiftKey && (ev.key === 'D' || ev.key === 'd' || ev.code === 'KeyD')) {
-        ev.preventDefault(); setDev(!S.dev); return;
+        ev.preventDefault();
+        if (S.dev) { setDev(false); return; }
+        askDevKey().then(function (k) {
+          if (k == null) return;
+          if (devKeyOk(k)) setDev(true);
+          else toast('Ключ разработчика неверный');
+        });
+        return;
       }
       if (inField(ev.target) || document.querySelector('dialog[open]')) return;
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -2379,8 +2441,12 @@
 
   /* для проверок */
   window.__map = S;
+  /* для проверок: прямой доступ к режиму разработчика — только когда
+     сайт открыт с диска (в тестах), в интернете его нет */
   window.__app = {
-    setDev: setDev, startJourney: startJourney, journeyNext: journeyNext,
-    hasText: hasText, textState: textState, annotationOf: annotationOf, exportContent: exportContent
+    startJourney: startJourney, journeyNext: journeyNext,
+    hasText: hasText, textState: textState, annotationOf: annotationOf,
+    exportContent: location.protocol === 'file:' ? exportContent : undefined
   };
+  if (location.protocol === 'file:') window.__app.setDev = setDev;
 })();
