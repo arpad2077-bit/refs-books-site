@@ -279,6 +279,9 @@ a{color:var(--acc);text-decoration:none}
   box-shadow:0 10px 30px rgba(0,0,0,.5);
 }
 .toast.on{opacity:1;transform:translate(-50%,0)}
+.toast{display:flex;align-items:center;gap:12px;max-width:min(92vw,640px);white-space:normal}
+.toast-act{padding:5px 12px;border-radius:7px;border:1px solid #4c3f7a;background:#2a2440;color:#d6ccff;cursor:pointer;font-size:12px;white-space:nowrap}
+.toast-act:hover{background:#372e57;color:#fff}
 
 .work-body{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr);gap:26px;align-items:start}
 @media (max-width:1000px){.work-body{grid-template-columns:1fr}}
@@ -538,6 +541,9 @@ body.on-map.has-journey .map-title{top:62px}
 .mini.prim{background:var(--acc);border-color:var(--acc);color:#14111f}
 .rd-progress{height:3px;background:#20242d}
 .rd-progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8b6cf5,#4ade80);transition:width .3s}
+.rd-progress i.done{background:linear-gradient(90deg,#4ade80,#2f8b4f)}
+#w-progress-label.done{color:#9df0bb}
+#rd-finish{transition:background .15s,border-color .15s,color .15s}
 .pane-foot{padding:12px 14px;border-top:1px solid #262b34;display:flex;justify-content:flex-end;background:var(--panel-2)}
 .pane-foot[hidden]{display:none}
 #rd-finish.done{background:rgba(74,222,128,.15);border-color:#2f8b4f;color:#9df0bb}

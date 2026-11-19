@@ -267,7 +267,10 @@
       el.classList.toggle('read', isRead(el.getAttribute('data-id')));
     });
     drawMini();
-    if (S.route.name === 'work') renderWorkTags(S.works.get(S.route.id));
+    if (S.route.name === 'work') {
+      var ww = S.works.get(S.route.id);
+      renderWorkTags(ww); renderProgress(ww); renderFinishBtn(ww);
+    }
   }
 
   /* ================= история / уведомления ================= */
@@ -283,9 +286,28 @@
     var t = $('#toast');
     if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
     t.textContent = msg;
+    t.style.pointerEvents = '';
     t.classList.add('on');
     clearTimeout(toastT);
     toastT = setTimeout(function () { t.classList.remove('on'); }, 2400);
+  }
+
+  /* уведомление с кнопкой действия */
+  function toastAction(msg, label, fn) {
+    var t = $('#toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
+    t.innerHTML = '<span>' + esc(msg) + '</span>';
+    t.style.pointerEvents = 'auto';
+    if (label) {
+      var b = document.createElement('button');
+      b.className = 'toast-act';
+      b.textContent = label;
+      b.onclick = function () { t.classList.remove('on'); clearTimeout(toastT); fn(); };
+      t.appendChild(b);
+    }
+    t.classList.add('on');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { t.classList.remove('on'); }, 10000);
   }
 
   /* окно выбора: ask('Вопрос', [{v, label, prim}]) -> Promise(v) */
@@ -403,12 +425,32 @@
   }
 
   function setView(name, sub) {
+    /* пока текст ещё виден — запоминаем позицию и предупреждаем о закладке */
+    if (name !== 'work' && guardWorkId) {
+      var gid = guardWorkId;
+      guardWorkId = null;
+      warnNoMainBookmark(gid);
+    }
     VIEWS.forEach(function (v) { $('#view-' + v).classList.toggle('on', v === name); });
     document.body.classList.toggle('at-home', name === 'home');
     document.body.classList.toggle('on-map', name === 'map');
     $('#btn-home').classList.toggle('hide', name === 'map' && sub !== 'single' || name === 'home');
     if (name !== 'work') closeReader();
     renderJourneyBar();
+  }
+
+  /* предупреждение: уходим из книги, а главной закладки пользователь не ставил */
+  var guardWorkId = null;
+  function warnNoMainBookmark(id) {
+    if (!reader || reader.id !== id) return;
+    var b = Acc.bookmarks(id).main;
+    if (b && b.manual) return;
+    if ((Acc.data.progress[id] || 0) < 0.003 && reader.ratio() < 0.003) return;
+    var pos = reader.currentPos();
+    toastAction('Главная закладка не поставлена — вернуться к месту чтения будет нечем.', 'Поставить здесь', function () {
+      Acc.setMain(id, pos, true);
+      toast('Главная закладка поставлена');
+    });
   }
 
   function mapView() { return Acc.data.prefs.mapView === 'epochs' ? 'epochs' : 'global'; }
@@ -430,6 +472,7 @@
 
   function showMap(opts) {
     S.route = { name: 'map' };
+    $('#stage').classList.remove('flying');
     setView('map');
     $$('#view-switch [data-mapview]').forEach(function (b) {
       b.classList.toggle('on', b.getAttribute('data-mapview') === mapView());
@@ -696,6 +739,7 @@
     var w = S.works.get(id);
     if (!w) { location.hash = '#/map'; return; }
     S.route = { name: 'work', id: id };
+    guardWorkId = id;
     setView('work');
     renderWork(w);
     $('#view-work').scrollTop = 0;
@@ -849,9 +893,12 @@
   }
 
   function renderProgress(w) {
-    var p = Acc.data.progress[w.id] || 0;
+    var done = isRead(w.id);
+    var p = done ? 1 : (Acc.data.progress[w.id] || 0);
     $('#rd-bar').style.width = Math.round(p * 100) + '%';
-    $('#w-progress-label').textContent = 'Прочитано ' + Math.round(p * 100) + '%';
+    $('#rd-bar').classList.toggle('done', done);
+    $('#w-progress-label').textContent = 'Прочитано ' + Math.round(p * 100) + '%' + (done ? ' · книга прочитана' : '');
+    $('#w-progress-label').classList.toggle('done', done);
   }
 
   function renderBookmarks(w) {
@@ -1497,6 +1544,27 @@
     go(advanceSide(j));
   }
 
+  /* выход из режима «по порядку»: закрываем карточку и затемнение,
+     показываем полную интерактивную карту */
+  function hideIntroCard() {
+    var card = $('#intro-card');
+    card.classList.remove('on');
+    $('#stage').classList.remove('dim');
+    setTimeout(function () { card.hidden = true; }, 250);
+  }
+
+  function exitJourney() {
+    var j = Acc.data.journey;
+    if (j) { j.active = false; Acc.save(); }
+    S.open.clear();
+    hideIntroCard();
+    var f = $('#nodes .focus'); if (f) f.classList.remove('focus');
+    renderJourneyBar();
+    if (S.route.name === 'map') { showMap(); fit(); }
+    else if (location.hash !== '#/map') location.hash = '#/map';
+    toast('Свободный режим');
+  }
+
   function skipCurrent() {
     var j = Acc.data.journey;
     if (!j || !j.active) return;
@@ -1519,7 +1587,7 @@
       '<button class="mini" data-j="go">Показать</button><button class="mini" data-j="skip">Пропустить</button><button class="mini" data-j="stop">Свободный режим</button>';
     bar.querySelector('[data-j="go"]').onclick = flyToCurrent;
     bar.querySelector('[data-j="skip"]').onclick = skipCurrent;
-    bar.querySelector('[data-j="stop"]').onclick = function () { j.active = false; Acc.save(); renderJourneyBar(); toast('Свободный режим'); };
+    bar.querySelector('[data-j="stop"]').onclick = exitJourney;
   }
 
   /* полёт камеры к текущему произведению + карточка «НАЧАТЬ» */
@@ -1581,7 +1649,8 @@
           '<h2>' + esc(w.title) + '</h2>' + (w.author ? '<div class="ic-author">' + esc(w.author) + '</div>' : '') +
           '<button class="start-btn small" data-ic="start">НАЧАТЬ</button>' +
           (st !== 'text' ? '<div class="ic-state st-' + st + '">' + (STATE_LABEL[st] || 'текст по ссылке') + '</div>' : '') +
-          '<div class="ic-sub"><button class="mini" data-ic="skip">Пропустить</button><button class="mini" data-ic="close">Осмотреться на карте</button></div>' +
+          '<div class="ic-sub"><button class="mini" data-ic="skip">Пропустить</button><button class="mini" data-ic="close">Осмотреться на карте</button>' +
+          '<button class="mini" data-ic="free">Свободный режим</button></div>' +
         '</div>' +
         (ann ? '<p class="ic-ann">' + esc(ann) + '</p>' : '') +
       '</div>';
@@ -1591,6 +1660,9 @@
     card.querySelector('[data-ic="start"]').onclick = function () { close(); location.hash = '#/w/' + encodeURIComponent(id); };
     card.querySelector('[data-ic="skip"]').onclick = function () { close(); skipCurrent(); };
     card.querySelector('[data-ic="close"]').onclick = close;
+    card.querySelector('[data-ic="free"]').onclick = exitJourney;
+    /* клик по затемнённому фону мимо карточки — осмотреться на карте */
+    card.onclick = function (ev) { if (!ev.target.closest('.ic-inner')) hideIntroCard(); };
   }
 
   /* ================= загрузка (разработчик) ================= */
@@ -1783,12 +1855,30 @@
       var r = stage.getBoundingClientRect();
       zoomAt(Math.pow(1.0016, -ev.deltaY), ev.clientX - r.left, ev.clientY - r.top);
     }, { passive: false });
-    var drag = null;
+    var drag = null, downAt = null;
     stage.addEventListener('pointerdown', function (ev) {
       if (ev.target.closest('.node,.item,.minimap,.map-title')) return;
+      var card = $('#intro-card');
+      if (!card.hidden) {
+        /* клик мимо карточки — осмотреться на карте, не выходя из маршрута */
+        if (ev.target.closest('#intro-card')) return;
+        hideIntroCard();
+        return;
+      }
+      downAt = { x: ev.clientX, y: ev.clientY };
       drag = { x: ev.clientX, y: ev.clientY, vx: S.view.x, vy: S.view.y };
       stage.classList.add('drag');
       try { stage.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+    /* левый клик (без перетаскивания) по пустому месту карты — выйти
+       из режима «по порядку» и просто осматривать карту */
+    stage.addEventListener('click', function (ev) {
+      if (!downAt) return;
+      var far = Math.abs(ev.clientX - downAt.x) + Math.abs(ev.clientY - downAt.y) > 6;
+      downAt = null;
+      if (far || ev.target.closest('.node,.item,.minimap,.map-title,#intro-card')) return;
+      var j = Acc.data.journey;
+      if (j && j.active) exitJourney();
     });
     stage.addEventListener('pointermove', function (ev) {
       if (!drag) return;
@@ -1959,7 +2049,7 @@
         hideBmPop(); return;
       }
       if (b.hasAttribute('data-main')) {
-        Acc.setMain(reader.id, bmAt);
+        Acc.setMain(reader.id, bmAt, true);
         reader.paintMarks(); renderBookmarks(S.works.get(reader.id)); toast('Главная закладка поставлена');
       } else {
         var m = reader.addMark(bmAt, b.getAttribute('data-col'));

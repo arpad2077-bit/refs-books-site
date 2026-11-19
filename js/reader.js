@@ -211,15 +211,45 @@
     return offsetOf(this.doc, range.startContainer, range.startOffset);
   };
 
+  /* ближайший видимый символ начиная с позиции: пробельные узлы
+     между блоками дают нулевой прямоугольник и неточный переход */
+  function visibleSpot(root, node, off) {
+    if (node.nodeValue && /\S/.test(node.nodeValue.slice(off))) return { node: node, off: off };
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    w.currentNode = node;
+    var n;
+    while ((n = w.nextNode())) {
+      var i = n.nodeValue.search(/\S/);
+      if (i >= 0) return { node: n, off: i };
+    }
+    return { node: node, off: off };
+  }
+
   Reader.prototype.goTo = function (pos, flash) {
     if (!this.doc) return;
     var loc = locate(this.doc, pos);
     if (!loc) return;
-    var el = loc.node.parentElement;
-    var top = el.getBoundingClientRect().top - this.host.getBoundingClientRect().top + this.host.scrollTop;
+    var host = this.host, hr = host.getBoundingClientRect();
+    var spot = visibleSpot(this.doc, loc.node, loc.off);
+    var top = null;
+    try {
+      var r = document.createRange();
+      r.setStart(spot.node, Math.min(spot.off, spot.node.nodeValue.length));
+      r.collapse(true);
+      var rect = r.getBoundingClientRect();
+      if (rect && (rect.top || rect.height)) top = rect.top - hr.top + host.scrollTop;
+    } catch (e) {}
+    if (top == null) {
+      var el = loc.node.parentElement;
+      if (el) top = el.getBoundingClientRect().top - hr.top + host.scrollTop;
+    }
+    if (top == null) return;
     this.host.scrollTop = Math.max(0, top - 20);
     if (flash !== false) {
-      el.classList.remove('rd-flash'); void el.offsetWidth; el.classList.add('rd-flash');
+      var mark = spot.node.parentElement;
+      while (mark && mark !== this.doc && mark.getBoundingClientRect().height > host.clientHeight) mark = mark.parentElement;
+      if (!mark || mark === this.doc) mark = spot.node.parentElement;
+      if (mark) { mark.classList.remove('rd-flash'); void mark.offsetWidth; mark.classList.add('rd-flash'); }
     }
   };
 

@@ -163,6 +163,7 @@
 
   /* ================= прогресс ================= */
   function setProgress(id, p) {
+    if (A.finished.indexOf(id) >= 0) return;   /* прочитанное не «откатывается» назад */
     p = Math.max(0, Math.min(1, p));
     var prev = A.progress[id] || 0;
     if (Math.abs(prev - p) < 0.003) return;
@@ -196,8 +197,11 @@
     return A.bookmarks[id];
   }
 
-  function setMain(id, pos) {
-    bm(id).main = { pos: pos, at: Date.now() };
+  /* manual: закладку поставил сам пользователь (правым кликом),
+     а не сайт при прокрутке */
+  function setMain(id, pos, manual) {
+    var prev = bm(id).main;
+    bm(id).main = { pos: pos, at: Date.now(), manual: !!manual || !!(prev && prev.manual) };
     save();
   }
 
