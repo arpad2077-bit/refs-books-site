@@ -286,9 +286,22 @@ const server = http.createServer(function (req, res) {
   serveStatic(req, res, url);
 });
 
-server.listen(PORT, function () {
-  console.log('Refs.Books: сервер запущен на порту ' + PORT);
-  console.log('Сайт: http://localhost:' + PORT + '/');
+server.listen(PORT, '0.0.0.0', function () {
+  console.log('[refs-books] сервер запущен');
+  console.log('[refs-books] порт: ' + PORT + ' (PORT=' + (process.env.PORT || 'не задан') + ')');
+  console.log('[refs-books] база: ' + DB_FILE);
+  console.log('[refs-books] корень сайта: ' + ROOT);
+});
+
+server.on('error', function (e) {
+  console.error('[refs-books] НЕ УДАЛОСЬ ЗАПУСТИТЬСЯ: ' + e.code + ' — ' + e.message);
+  if (e.code === 'EADDRINUSE') console.error('[refs-books] порт ' + PORT + ' уже занят');
+  if (e.code === 'EACCES') console.error('[refs-books] нет прав на порт ' + PORT);
+  process.exit(1);
+});
+
+process.on('uncaughtException', function (e) {
+  console.error('[refs-books] критическая ошибка: ' + (e && e.stack || e));
 });
 
 process.on('SIGTERM', function () { writeDb(); process.exit(0); });
