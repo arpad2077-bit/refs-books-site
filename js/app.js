@@ -376,6 +376,74 @@
 
     bindUI();
     route();
+    bootResume();
+
+    /* повторный заход вошедшего пользователя — сразу на интерактивную карту */
+    if (Acc.isLoggedIn() && Acc.data.onboarded) {
+      var h0 = location.hash.replace(/^#\/?/, '');
+      if (h0 === '') location.hash = '#/map';
+    }
+  }
+
+  /* ================= повторный заход =================
+     Режим изучения сам не включается: пользователь всегда попадает
+     на интерактивную карту. Если книга осталась недочитанной,
+     сверху появляется выбор — остаться на карте или продолжить чтение. */
+  function bootResume() {
+    S.resumeHidden = false;
+    /* имя аккаунта — и для шапки, и для участия в розыгрыше */
+    if (Acc.isLoggedIn() && Acc.user() && !Acc.data.name) {
+      Acc.data.name = Acc.user().name;
+      Acc.save();
+    }
+    try {
+      var hello = JSON.parse(localStorage.getItem('refbooks.hello') || 'null');
+      if (hello) {
+        localStorage.removeItem('refbooks.hello');
+        if (hello.name) setTimeout(function () { toast('Здравствуйте, ' + hello.name + '!'); }, 400);
+      }
+    } catch (e) {}
+    renderResumeBar();
+  }
+
+  function pickResumeWork() {
+    var j = Acc.data.journey;
+    var active = j && j.active && j.current && S.works.has(j.current) ? j.current : null;
+    var last = Acc.data.lastWork && S.works.has(Acc.data.lastWork) ? Acc.data.lastWork : null;
+    var lastDone = last && (Acc.data.progress[last] || 0) >= 0.985;
+    /* продолжаем ту книгу, которую читали; если она уже дочитана
+       и маршрут идёт дальше — открываем следующую по маршруту */
+    if (active && (!last || lastDone || last === active)) return active;
+    if (last) return last;
+    if (active) return active;
+    var inProg = Acc.inProgress().filter(function (id) { return S.works.has(id); });
+    return inProg.length ? inProg[inProg.length - 1] : null;
+  }
+
+  function hideResumeBar() {
+    var b = $('#resume-bar');
+    if (b) b.hidden = true;
+    S.resumeHidden = true;
+  }
+
+  function renderResumeBar() {
+    var bar = $('#resume-bar');
+    if (!bar) return;
+    if (S.route.name !== 'map' || S.resumeHidden) { bar.hidden = true; return; }
+    var id = pickResumeWork();
+    var w = id && S.works.get(id);
+    if (!w) { bar.hidden = true; return; }
+    var prog = Math.round((Acc.data.progress[id] || 0) * 100);
+    bar.innerHTML =
+      '<div><b>Продолжить чтение?</b><small>' + esc(w.title) + (prog ? ' · прочитано ' + prog + '%' : '') + '</small></div>' +
+      '<button class="rbtn prim" data-r="go">Продолжить чтение</button>' +
+      '<button class="rbtn" data-r="stay">Остаться на карте</button>';
+    bar.hidden = false;
+    bar.querySelector('[data-r="go"]').onclick = function () {
+      hideResumeBar();
+      location.hash = '#/w/' + encodeURIComponent(id);
+    };
+    bar.querySelector('[data-r="stay"]').onclick = hideResumeBar;
   }
 
   /* ================= технические работы ================= */
@@ -406,8 +474,113 @@
     }
   }
 
+  /* ================= вход и регистрация ================= */
+  var authState = { mode: 'login', busy: false, error: '', next: null };
+
+  function showAuth(mode, next) {
+    authState.mode = mode === 'register' ? 'register' : 'login';
+    if (next !== undefined) authState.next = next;
+    authState.error = '';
+    S.route = { name: 'auth' };
+    setView('auth');
+    renderAuth();
+  }
+
+  function authGo(userId, name) {
+    /* данные профиля читаются при загрузке страницы — перезагружаемся,
+       чтобы вошли именно его прогресс, закладки и подписка */
+    try { localStorage.setItem('refbooks.hello', JSON.stringify({ name: name || '' })); } catch (e) {}
+    var next = authState.next;
+    if (next === 'onboarding') {
+      location.hash = '#/';
+      location.reload();
+      return;
+    }
+    location.hash = next === 'profile' ? '#/profile' : '#/map';
+    location.reload();
+  }
+
+  function renderAuth() {
+    var reg = authState.mode === 'register';
+    var known = Acc.accounts();
+    var errorHtml = authState.error ? '<div class="auth-err">' + esc(authState.error) + '</div>' : '';
+    $('#auth-root').innerHTML =
+      '<div class="auth-box">' +
+        '<h1>' + (reg ? 'Регистрация' : 'Вход в аккаунт') + '</h1>' +
+        '<p class="lead">' + (reg
+          ? 'Создайте профиль — прогресс чтения, закладки и подписка будут сохраняться за ним.'
+          : 'Войдите, чтобы вернуться к своим книгам и закладкам.') + '</p>' +
+        '<form id="auth-form" class="auth-form" autocomplete="on" novalidate>' +
+          '<label class="field"' + (reg ? '' : ' hidden') + '><span>Имя профиля</span>' +
+            '<input id="au-name" type="text" autocomplete="nickname" placeholder="Как вас называть"></label>' +
+          '<label class="field"><span>Электронная почта</span>' +
+            '<input id="au-email" type="email" autocomplete="username" inputmode="email" placeholder="you@example.com"></label>' +
+          '<label class="field"><span>Пароль</span>' +
+            '<input id="au-pass" type="password" autocomplete="' + (reg ? 'new-password' : 'current-password') +
+            '" placeholder="' + (reg ? 'Минимум 6 символов' : 'Ваш пароль') + '"></label>' +
+          (reg ? '<label class="field"><span>Пароль ещё раз</span>' +
+            '<input id="au-pass2" type="password" autocomplete="new-password" placeholder="Повторите пароль"></label>' : '') +
+          '<label class="sw auth-remember"><input id="au-remember" type="checkbox" checked> Запомнить меня и входить автоматически</label>' +
+          errorHtml +
+          '<div class="auth-foot">' +
+            '<button type="submit" class="tb prim auth-submit"' + (authState.busy ? ' disabled' : '') + '>' +
+              (authState.busy ? 'Проверяем…' : (reg ? 'Создать аккаунт' : 'Войти')) + '</button>' +
+            '<button type="button" class="tb" id="au-back">На главную</button>' +
+          '</div>' +
+        '</form>' +
+        '<p class="auth-switch">' + (reg
+          ? 'Уже есть аккаунт? <a href="#/login" data-au="login">Войти</a>'
+          : 'Нет аккаунта? <a href="#/register" data-au="register">Зарегистрироваться</a>') + '</p>' +
+        (known.length ? '<div class="auth-known"><h2>Профили на этом устройстве</h2><ul>' +
+          known.map(function (u) {
+            return '<li><button class="tb" data-au-pick="' + esc(u.id) + '"><b>' + esc(u.name) + '</b>' +
+              '<small>' + esc(u.email) + '</small></button></li>';
+          }).join('') + '</ul><p class="muted">Чтобы войти в другой профиль, нужен его пароль.</p></div>' : '') +
+      '</div>';
+
+    var form = $('#auth-form');
+    form.onsubmit = function (ev) {
+      ev.preventDefault();
+      if (authState.busy) return;
+      var name = $('#au-name') ? $('#au-name').value : '';
+      var email = $('#au-email').value;
+      var pass = $('#au-pass').value;
+      var remember = $('#au-remember').checked;
+      var done = function (r) {
+        authState.busy = false;
+        if (!r || !r.ok) { authState.error = (r && r.error) || 'Не удалось войти'; renderAuth(); return; }
+        authGo(r.user.id, r.user.name);
+      };
+      if (reg) {
+        if ($('#au-pass2').value !== pass) { authState.error = 'Пароли не совпадают'; renderAuth(); return; }
+        authState.busy = true; renderAuth();
+        Acc.register({ name: name, email: email, password: pass, remember: remember }).then(done, done);
+      } else {
+        authState.busy = true; renderAuth();
+        Acc.login(email, pass, remember).then(done, done);
+      }
+    };
+    $$('#auth-root [data-au]').forEach(function (a) {
+      a.onclick = function (ev) { ev.preventDefault(); showAuth(a.getAttribute('data-au')); };
+    });
+    $$('#auth-root [data-au-pick]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute('data-au-pick');
+        if (authState.mode === 'register') return;
+        authState.error = '';
+        renderAuth();
+        var email = $('#au-email');
+        var u = Acc.accounts().filter(function (x) { return x.id === id; })[0];
+        if (u) { email.value = u.email; $('#au-pass').focus(); }
+      };
+    });
+    $('#au-back').onclick = function () { location.hash = '#/'; };
+    if (authState.mode === 'register' && !authState.error) { var n = $('#au-name'); if (n) n.focus(); }
+    else { var e = $('#au-email'); if (e && !e.value) e.focus(); }
+  }
+
   /* ================= маршруты ================= */
-  var VIEWS = ['home', 'map', 'work', 'profile', 'subscribe', 'catalog', 'raffle'];
+  var VIEWS = ['home', 'map', 'work', 'profile', 'subscribe', 'catalog', 'raffle', 'auth'];
 
   function route() {
     hideTip();
@@ -415,6 +588,8 @@
     var m;
     if (h === '' || h === '/') return showHome();
     if (h === '/map') return showMap();
+    if (h === '/login') return showAuth('login');
+    if (h === '/register') return showAuth('register');
     if ((m = h.match(/^\/w\/(.+)$/))) return showWork(decodeURIComponent(m[1]));
     if ((m = h.match(/^\/m\/([^/]+)\/(out|in)$/))) return showSingle(decodeURIComponent(m[1]), m[2]);
     if (h === '/profile') return showProfile();
@@ -437,6 +612,7 @@
     $('#btn-home').classList.toggle('hide', name === 'map' && sub !== 'single' || name === 'home');
     if (name !== 'work') closeReader();
     renderJourneyBar();
+    renderResumeBar();
   }
 
   /* предупреждение: уходим из книги, а главной закладки пользователь не ставил */
@@ -740,6 +916,7 @@
     if (!w) { location.hash = '#/map'; return; }
     S.route = { name: 'work', id: id };
     guardWorkId = id;
+    Acc.setLastWork(id);
     setView('work');
     renderWork(w);
     $('#view-work').scrollTop = 0;
@@ -999,6 +1176,7 @@
 
     $('#profile-root').innerHTML =
       '<h1>Профиль</h1>' +
+      accountCard() +
       '<section class="card status ' + (sub ? 'sub' : 'guest') + '">' +
         '<div class="st-head"><span class="badge">' + (sub ? 'Подписчик' : 'Гость') + '</span>' +
           (sub ? '<span>' + esc(plan.title) + (until ? ' · до ' + until : ' · навсегда') + '</span>' : '<span>бесплатная версия</span>') + '</div>' +
@@ -1054,6 +1232,7 @@
     if (sh) sh.onclick = function () { navigator.share({ title: 'Refs.Books', url: Acc.inviteLink() }).catch(function () {}); };
     var it = $('#inv-test');
     if (it) it.onclick = function () { Acc.creditInvite(1); showProfile(); };
+    bindAccount();
     $('#pf-ann').onchange = function () { Acc.data.prefs.annotations = this.checked; Acc.save(); renderAnnBtn(); };
     var g = $('#jr-go'); if (g) g.onclick = function () { flyToCurrent(); };
     var s = $('#jr-stop'); if (s) s.onclick = function () { Acc.data.journey.active = false; Acc.save(); showProfile(); };
@@ -1091,10 +1270,66 @@
     inp.onkeydown = function (ev) { if (ev.key === 'Enter') go(); };
   }
 
+  /* ---------- аккаунт в профиле: кто вошёл и смена профиля ---------- */
+  function accountCard() {
+    var u = Acc.user();
+    if (!u) {
+      return '<section class="card acc-card">' +
+        '<h2>Аккаунт</h2>' +
+        '<p class="muted">Вы не вошли. Войдите или зарегистрируйтесь — прогресс, закладки и подписка будут сохраняться за профилем.</p>' +
+        '<a class="tb prim" href="#/login">Войти</a> <a class="tb" href="#/register">Регистрация</a>' +
+      '</section>';
+    }
+    return '<section class="card acc-card">' +
+      '<h2>Аккаунт</h2>' +
+      '<div class="acc-head"><span class="acc-ava">' + esc((u.name || '?').charAt(0).toUpperCase()) + '</span>' +
+        '<div><b>' + esc(u.name) + '</b><small>' + esc(u.email) + '</small></div></div>' +
+      '<div class="acc-actions">' +
+        '<button class="tb" id="acc-switch">Сменить профиль</button>' +
+        '<button class="tb" id="acc-logout">Выйти</button>' +
+      '</div>' +
+    '</section>';
+  }
+
+  function bindAccount() {
+    var sw = $('#acc-switch');
+    if (sw) sw.onclick = function () {
+      ask('Сменить профиль', Acc.accounts().filter(function (x) { return !Acc.user() || x.id !== Acc.user().id; })
+        .map(function (x) { return { v: x.id, label: x.name, sub: x.email }; })
+        .concat([
+          { v: '__login', label: 'Войти в другой аккаунт', sub: 'по почте и паролю' },
+          { v: '__new', label: 'Создать новый профиль', sub: 'регистрация' }
+        ]), 'Каждый профиль хранит свои книги, закладки и подписку.')
+        .then(function (v) {
+          if (!v) return;
+          if (v === '__login') { location.hash = '#/login'; return; }
+          if (v === '__new') { location.hash = '#/register'; return; }
+          enterProfile(v);
+        });
+    };
+    var lo = $('#acc-logout');
+    if (lo) lo.onclick = function () {
+      ask('Выйти из аккаунта?', [
+        { v: 'yes', label: 'Выйти', prim: true },
+        { v: 'no', label: 'Остаться' }
+      ], 'Данные профиля сохранятся — сможете войти снова по почте и паролю.').then(function (v) {
+        if (v !== 'yes') return;
+        Acc.logout().then(function () { location.hash = '#/'; location.reload(); });
+      });
+    };
+  }
+
+  /* сменить профиль: перезагрузка подхватит данные выбранного */
+  function enterProfile(id) {
+    Acc.enter(id, Acc.remember !== false).catch(function () {}).then(function () { location.reload(); });
+  }
+
   function renderStatusChip() {
     var sub = Acc.isSubscriber();
-    $('#profile-status').textContent = sub ? 'Подписчик' : 'Гость';
+    var u = Acc.user();
+    $('#profile-status').textContent = u ? u.name : (sub ? 'Подписчик' : 'Гость');
     $('#btn-profile').classList.toggle('sub', sub);
+    $('#btn-profile').classList.toggle('acc', !!u);
     document.body.classList.toggle('is-sub', sub);
   }
 
@@ -1827,8 +2062,9 @@
     };
     $('#dev-exit').onclick = function () { setDev(false); };
 
-    /* главная */
+    /* главная: сначала вход или регистрация, затем выбор режима */
     $('#home-start').onclick = function () {
+      if (!Acc.isLoggedIn()) { return showAuth('login', 'onboarding'); }
       if (!Acc.data.onboarded) return chooseOrder();
       var j = Acc.data.journey;
       if (j && j.active) return flyToCurrent();

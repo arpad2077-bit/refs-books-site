@@ -101,6 +101,11 @@ async function run() {
     /* 6. онбординг */
     A.data.onboarded = false; A.save();
     W.location.hash = '#/'; await wait(200);
+    $('#home-start').click(); await wait(200);
+    ok(!!$('#auth-form') && /Вход в аккаунт/.test($('#auth-root').textContent), 'кнопка «НАЧАТЬ» сначала открывает вход или регистрацию');
+    await W.Account.register({ name: 'Тест', email: 'test@example.com', password: '123456', remember: true });
+    ok(W.Account.isLoggedIn() && W.Account.user().email === 'test@example.com', 'регистрация: аккаунт создан, вход выполнен');
+    W.location.hash = '#/'; await wait(200);
     $('#home-start').click(); await wait(150);
     ok(/свободном режиме или по порядку/.test($('#ask-body').textContent), 'вопрос «свободный режим или по порядку?»');
     $('#ask-body [data-v=order]').click(); await wait(150);

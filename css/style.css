@@ -794,12 +794,65 @@ body.reading-full .doc-holder{user-select:text;-webkit-user-select:text}
 .ad-full-close:disabled{opacity:.55;cursor:not-allowed}
 .ad-full-close:not(:disabled):hover{background:#2a2f3a}
 
-/* технические работы */
-.maint{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;
+/* технические работы */.maint{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;
   background:radial-gradient(ellipse at 50% 0%,#1d1a2e 0%,#0f1013 65%)}
 .maint[hidden]{display:none}
 .maint-box{max-width:480px;text-align:center}
 .maint-ico{font-size:54px;margin-bottom:10px}
 .maint-box h1{margin:0 0 12px;font-size:34px;letter-spacing:-.5px}
 .maint-box p{margin:0;color:var(--fg-dim);font-size:16px;line-height:1.6}
+
+/* ---------- выбор при повторном заходе ---------- */
+.resume-bar{
+  position:fixed;left:50%;top:68px;transform:translateX(-50%);z-index:57;
+  display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-radius:12px;
+  background:rgba(32,28,48,.95);border:1px solid #4c3f7a;color:var(--fg-dim);
+  font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(8px);max-width:94vw;
+}
+.resume-bar[hidden]{display:none}
+.resume-bar b{color:#fff;font-weight:600;display:block;font-size:13.5px}
+.resume-bar small{color:var(--muted);font-size:11.5px}
+.resume-bar .rbtn{height:34px;padding:0 14px;border-radius:8px;cursor:pointer;
+  background:#262b36;border:1px solid #3a4150;color:var(--fg-dim);white-space:nowrap}
+.resume-bar .rbtn:hover{background:#2f3542;color:#fff}
+.resume-bar .rbtn.prim{background:var(--acc);border-color:var(--acc);color:#14111f;font-weight:650}
+.resume-bar .rbtn.prim:hover{background:#b9a4ff}
+body.dev-mode .resume-bar{top:98px}
+
+/* ---------- вход и регистрация ---------- */
+.auth-wrap{max-width:460px;padding-top:7vh}
+.auth-box h1{margin:0 0 10px;font-size:30px;letter-spacing:-.4px}
+.auth-form{display:flex;flex-direction:column;gap:4px;margin:18px 0 6px}
+.auth-form .field{margin-bottom:12px}
+.auth-form .field[hidden]{display:none}
+.auth-form .field>span{color:var(--fg-dim)}
+.auth-form input[type=text],.auth-form input[type=email],.auth-form input[type=password]{
+  width:100%;height:44px;padding:0 13px;border-radius:9px;
+  background:#12151a;border:1px solid #2c313b;outline:none;color:var(--fg);font-size:15px;
+}
+.auth-form input:focus{border-color:var(--acc);background:#171a21}
+.auth-form input[hidden]{display:none}
+.auth-remember{margin:2px 0 14px;font-size:13px;color:var(--fg-dim)}
+.auth-err{margin:0 0 12px;padding:9px 12px;border-radius:8px;font-size:13px;
+  background:rgba(255,143,143,.1);border:1px solid #6b3f3f;color:#ffb3b3}
+.auth-foot{display:flex;gap:10px;align-items:center}
+.auth-submit{height:44px;padding:0 26px;font-size:15px}
+.auth-switch{margin:14px 0 0;font-size:13.5px;color:var(--muted)}
+.auth-switch a{color:#c3b0ff}
+.auth-known{margin-top:26px;border-top:1px solid #23272f;padding-top:18px}
+.auth-known h2{font-size:14px;margin:0 0 10px;color:var(--fg-dim)}
+.auth-known ul{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:8px}
+.auth-known li button{width:100%;height:auto;padding:9px 13px;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.auth-known li button b{color:var(--fg);font-weight:600}
+.auth-known li small{color:var(--muted);font-size:12px}
+
+/* аккаунт в профиле */
+.acc-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.acc-ava{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:17px;
+  background:conic-gradient(from 210deg,#a78bfa,#4ade80,#a78bfa);color:#14111f}
+.acc-head div{display:flex;flex-direction:column}
+.acc-head b{font-size:15px}
+.acc-head small{color:var(--muted);font-size:12.5px}
+.acc-actions{display:flex;gap:8px;flex-wrap:wrap}
+#btn-profile.acc{border-color:#4c3f7a;color:#d6ccff}
 

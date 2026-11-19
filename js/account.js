@@ -16,6 +16,8 @@
   'use strict';
 
   var KEY = 'refbooks.account.v1';
+  var AUTH_KEY = 'refbooks.auth.v1';        // список аккаунтов на этом устройстве
+  var SESS_KEY = 'refbooks.session.v1';     // вход без «запомнить» — на одну вкладку
   var FREE_BOOKS = 5;
 
   var PLANS = {
@@ -45,15 +47,152 @@
       promos: [],            // выигранные промокоды: [{code, days, raffleId, createdAt, claimedAt}]
       prefs: { annotations: true },
       onboarded: false,
+      lastWork: null,        // последнее открытое произведение
       journey: null          // режим «по порядку»
     };
+  }
+
+  /* ================= аккаунты (вход и регистрация) =================
+     Данные каждого профиля лежат отдельно: refbooks.account.v1.<id>,
+     у гостя без входа — refbooks.account.v1.
+     Это хранилище браузера: пароль не отправляется никуда и хранится
+     только в виде хеша, но настоящей защитой это не является —
+     для реальных аккаунтов нужен сервер (см. backend ниже). */
+  function loadAuth() {
+    try {
+      var d = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
+      if (d && d.accounts) {
+        d.current = (d.current && d.accounts.some(function (a) { return a.id === d.current; })) ? d.current : null;
+        d.remember = d.remember !== false;
+        return d;
+      }
+    } catch (e) {}
+    return { accounts: [], current: null, remember: true };
+  }
+  function saveAuth() {
+    try { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); } catch (e) {}
+  }
+  var auth = loadAuth();
+
+  /* «запомнить» выключено — вход живёт только до закрытия вкладки */
+  function sessionActive() {
+    if (!auth.current) return false;
+    if (auth.remember) return true;
+    try { return sessionStorage.getItem(SESS_KEY) === auth.current; } catch (e) { return false; }
+  }
+  /* сессия истекла (вкладку закрыли) — считаем, что пользователь вышел */
+  if (auth.current && !sessionActive()) { auth.current = null; saveAuth(); }
+
+  function dataKey() { return auth.current ? KEY + '.' + auth.current : KEY; }
+
+  function normEmail(e) { return String(e || '').trim().toLowerCase(); }
+  function hexOf(buf) {
+    var b = new Uint8Array(buf), s = '';
+    for (var i = 0; i < b.length; i++) s += ('0' + b[i].toString(16)).slice(-2);
+    return s;
+  }
+  function plainHash(s) {
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return 'f:' + h.toString(16);
+  }
+  function sha256(s) {
+    try {
+      if (global.crypto && global.crypto.subtle && global.TextEncoder) {
+        return global.crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
+          .then(function (buf) { return 's:' + hexOf(buf); });
+      }
+    } catch (e) {}
+    return Promise.resolve(null);
+  }
+  function makeHash(email, pass) {
+    var s = 'refs|' + normEmail(email) + '|' + pass;
+    return sha256(s).then(function (h) { return h || plainHash(s); });
+  }
+  function checkHash(stored, email, pass) {
+    var s = 'refs|' + normEmail(email) + '|' + pass;
+    if (String(stored).charAt(0) === 's') {
+      return sha256(s).then(function (h) { return !!h && h === stored || stored === plainHash(s); });
+    }
+    return Promise.resolve(stored === plainHash(s));
+  }
+  function pubUser(a) { return a ? { id: a.id, name: a.name, email: a.email } : null; }
+
+  function isLoggedIn() { return !!auth.current; }
+  function user() {
+    for (var i = 0; i < auth.accounts.length; i++) {
+      if (auth.accounts[i].id === auth.current) return pubUser(auth.accounts[i]);
+    }
+    return null;
+  }
+  function accounts() {
+    return auth.accounts.map(function (a) { return pubUser(a); });
+  }
+
+  function validEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(e || '').trim()); }
+
+  /* войти (или остаться) в аккаунт: перезагрузка подхватит его данные */
+  function enter(id, remember) {
+    auth.current = id;
+    auth.remember = remember !== false;
+    saveAuth();
+    try {
+      if (auth.remember) sessionStorage.removeItem(SESS_KEY);
+      else sessionStorage.setItem(SESS_KEY, id);
+    } catch (e) {}
+    return Promise.resolve({ ok: true, user: user() });
+  }
+
+  function register(d) {
+    d = d || {};
+    var name = String(d.name || '').trim();
+    var email = normEmail(d.email);
+    var pass = String(d.password || '');
+    if (name.length < 2) return Promise.resolve({ ok: false, error: 'Имя профиля — минимум 2 символа' });
+    if (!validEmail(email)) return Promise.resolve({ ok: false, error: 'Проверьте электронную почту' });
+    if (pass.length < 6) return Promise.resolve({ ok: false, error: 'Пароль — минимум 6 символов' });
+    if (auth.accounts.some(function (a) { return a.email === email; })) {
+      return Promise.resolve({ ok: false, error: 'Аккаунт с такой почтой уже есть — войдите в него' });
+    }
+    var id = uid();
+    return makeHash(email, pass).then(function (hash) {
+      auth.accounts.push({ id: id, name: name, email: email, pass: hash, createdAt: Date.now() });
+      /* первые данные гостя (прогресс, закладки) забирает новый аккаунт */
+      try {
+        var anon = localStorage.getItem(KEY);
+        if (anon && !localStorage.getItem(KEY + '.' + id)) {
+          localStorage.setItem(KEY + '.' + id, anon);
+          localStorage.removeItem(KEY);
+        }
+      } catch (e) {}
+      return enter(id, d.remember).then(function () { return { ok: true, user: user() }; });
+    });
+  }
+
+  function login(email, password, remember) {
+    email = normEmail(email);
+    var acc = null;
+    for (var i = 0; i < auth.accounts.length; i++) if (auth.accounts[i].email === email) acc = auth.accounts[i];
+    if (!acc) return Promise.resolve({ ok: false, error: 'Аккаунт с такой почтой не найден' });
+    return checkHash(acc.pass, email, password).then(function (okHash) {
+      if (!okHash) return { ok: false, error: 'Неверный пароль' };
+      return enter(acc.id, remember).then(function () { return { ok: true, user: user() }; });
+    });
+  }
+
+  function logout() {
+    save();                      // сохраняем данные текущего профиля
+    auth.current = null;
+    saveAuth();
+    try { sessionStorage.removeItem(SESS_KEY); } catch (e) {}
+    return Promise.resolve();
   }
 
   var A = load();
 
   function load() {
     try {
-      var raw = localStorage.getItem(KEY);
+      var raw = localStorage.getItem(dataKey());
       if (raw) {
         var d = JSON.parse(raw);
         var b = blank();
@@ -66,7 +205,7 @@
   }
 
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(A)); } catch (e) {}
+    try { localStorage.setItem(dataKey(), JSON.stringify(A)); } catch (e) {}
     emit();
   }
 
@@ -162,6 +301,12 @@
   }
 
   /* ================= прогресс ================= */
+  function setLastWork(id) {
+    if (!id || A.lastWork === id) return;
+    A.lastWork = id;
+    save();
+  }
+
   function setProgress(id, p) {
     if (A.finished.indexOf(id) >= 0) return;   /* прочитанное не «откатывается» назад */
     p = Math.max(0, Math.min(1, p));
@@ -335,7 +480,14 @@
     creditInvite: creditInvite,
     acceptInvite: acceptInvite,
 
+    /* аккаунты */
+    isLoggedIn: isLoggedIn, user: user, accounts: accounts,
+    get remember() { return auth.remember !== false; },
+    register: register, login: login, logout: logout, enter: enter,
+    validEmail: validEmail,
+
     setProgress: setProgress,
+    setLastWork: setLastWork,
     finish: finish, unfinish: unfinish,
     inProgress: inProgress,
 
