@@ -141,7 +141,7 @@ async function run() {
     holder.scrollTop = 4000; holder.dispatchEvent(new Event('scroll')); await wait(700);
     A.unfinish('faust');
     ok(A.data.progress.faust > 0, 'прогресс чтения: ' + Math.round(A.data.progress.faust * 100) + '%');
-    ok(!!A.bookmarks('faust').main, 'главная закладка «где остановился» сохранена');
+    ok(!!A.bookmarks('faust').main === false, 'прокрутка не ставит главную закладку — только сам читатель');
     ok(!$('#rd-mark'), 'кнопки «＋ Закладка» больше нет');
 
     /* закладка по правому клику */

@@ -114,10 +114,15 @@
     this.paint();
     var self = this;
     var main = global.Account.bookmarks(this.id).main;
-    /* пока позиция не восстановлена, события прокрутки от вставки
-       документа не должны затирать прогресс и главную закладку нулём */
+    /* возвращаемся к главной закладке, если её поставил сам читатель,
+       иначе — к тому месту, где он остановился в прошлый раз */
     setTimeout(function () {
       if (main) self.goTo(main.pos, false);
+      else {
+        var total = self.doc ? self.doc.textContent.length : 0;
+        var r = global.Account.data.progress[self.id] || 0;
+        if (total && r > 0.01) self.goTo(Math.round(total * r), false);
+      }
       clearTimeout(self._t);
       setTimeout(function () { self._ready = true; }, 80);
     }, 30);
@@ -328,7 +333,7 @@
       t = self._t = setTimeout(function () {
         if (!self.doc || self._ready === false) return;
         global.Account.setProgress(self.id, self.ratio());
-        global.Account.setMain(self.id, self.currentPos());
+        /* главную закладку ставит только сам читатель — прокрутка её не меняет */
         self.onChange('scroll');
       }, 450);
     };

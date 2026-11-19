@@ -1573,22 +1573,9 @@
     if (ok) flyToCurrent(); else journeyNext();
   }
 
-  function renderJourneyBar() {
-    var bar = $('#journey-bar'), j = Acc.data.journey;
-    if (!j || !j.active || !j.current || S.route.name === 'home') { bar.hidden = true; return; }
-    var w = S.works.get(j.current);
-    if (!w) { bar.hidden = true; return; }
-    var where = j.stack.length
-      ? 'Боковая линия «' + esc(S.works.get(j.stack[j.stack.length - 1].owner).title) + '» · ' +
-        (j.stack[j.stack.length - 1].pos + 1) + ' из ' + j.stack[j.stack.length - 1].list.length
-      : 'Главная линия · ' + (j.mainIdx + 1) + ' из ' + j.main.length;
-    bar.hidden = false;
-    bar.innerHTML = '<span class="j-k">По порядку</span><span>' + where + '</span><b>' + esc(w.title) + '</b>' +
-      '<button class="mini" data-j="go">Показать</button><button class="mini" data-j="skip">Пропустить</button><button class="mini" data-j="stop">Свободный режим</button>';
-    bar.querySelector('[data-j="go"]').onclick = flyToCurrent;
-    bar.querySelector('[data-j="skip"]').onclick = skipCurrent;
-    bar.querySelector('[data-j="stop"]').onclick = exitJourney;
-  }
+  /* полоса маршрута убрана: она загораживала верх страницы произведения.
+     Управление маршрутом осталось в профиле и на карточке произведения. */
+  function renderJourneyBar() {}
 
   /* полёт камеры к текущему произведению + карточка «НАЧАТЬ» */
   function flyToCurrent() {
@@ -1855,9 +1842,11 @@
       var r = stage.getBoundingClientRect();
       zoomAt(Math.pow(1.0016, -ev.deltaY), ev.clientX - r.left, ev.clientY - r.top);
     }, { passive: false });
-    var drag = null, downAt = null;
+    var drag = null, downAt = null, moved = 0;
+    var far = function (x, y) { return Math.abs(x - downAt.x) + Math.abs(y - downAt.y) > 5; };
+
     stage.addEventListener('pointerdown', function (ev) {
-      if (ev.target.closest('.node,.item,.minimap,.map-title')) return;
+      if (ev.button !== 0 || ev.target.closest('.node,.item,.minimap,.map-title')) return;
       var card = $('#intro-card');
       if (!card.hidden) {
         /* клик мимо карточки — осмотреться на карте, не выходя из маршрута */
@@ -1866,28 +1855,37 @@
         return;
       }
       downAt = { x: ev.clientX, y: ev.clientY };
+      moved = 0;
       drag = { x: ev.clientX, y: ev.clientY, vx: S.view.x, vy: S.view.y };
       stage.classList.add('drag');
-      try { stage.setPointerCapture(ev.pointerId); } catch (e) {}
     });
-    /* левый клик (без перетаскивания) по пустому месту карты — выйти
-       из режима «по порядку» и просто осматривать карту */
-    stage.addEventListener('click', function (ev) {
-      if (!downAt) return;
-      var far = Math.abs(ev.clientX - downAt.x) + Math.abs(ev.clientY - downAt.y) > 6;
-      downAt = null;
-      if (far || ev.target.closest('.node,.item,.minimap,.map-title,#intro-card')) return;
-      var j = Acc.data.journey;
-      if (j && j.active) exitJourney();
-    });
-    stage.addEventListener('pointermove', function (ev) {
+    /* перетаскивание слушаем на всём окне: курсор может уйти за край
+       карты или за пределы окна — карта не должна из-за этого «залипать» */
+    window.addEventListener('pointermove', function (ev) {
       if (!drag) return;
-      S.view.x = drag.vx + ev.clientX - drag.x; S.view.y = drag.vy + ev.clientY - drag.y;
+      var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) moved = 1;
+      if (!moved) return;
+      S.view.x = drag.vx + dx; S.view.y = drag.vy + dy;
       applyView(); drawMini();
     });
     ['pointerup', 'pointercancel'].forEach(function (t) {
-      stage.addEventListener(t, function () { drag = null; stage.classList.remove('drag'); });
+      window.addEventListener(t, function (ev) {
+        if (!drag) return;
+        var wasDrag = moved || (downAt && far(ev.clientX, ev.clientY));
+        drag = null;
+        stage.classList.remove('drag');
+        /* левый клик по пустому месту карты (без перетаскивания) —
+           выйти из режима «по порядку» и осматривать карту */
+        if (!wasDrag && downAt && S.route.name === 'map' &&
+            !ev.target.closest('.node,.item,.minimap,.map-title,#intro-card')) {
+          var j = Acc.data.journey;
+          if (j && j.active) exitJourney();
+        }
+        downAt = null;
+      });
     });
+    stage.addEventListener('click', function (ev) { downAt = null; });
     $('#nodes').addEventListener('mouseover', function (ev) {
       var el = ev.target.closest('[data-id]');
       if (!el || (ev.relatedTarget && el.contains(ev.relatedTarget))) return;
