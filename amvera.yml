@@ -1,0 +1,9 @@
+# Amvera Cloud — российский хостинг для Node.js (оплата картой РФ).
+# Файл читается автоматически при деплое из GitHub или через git push.
+# Порт приложения — 3000 (server.js слушает process.env.PORT || 3000).
+meta:
+  environment: node
+  toolchain:
+    name: npm
+    version: 22
+containerPort: 3000
