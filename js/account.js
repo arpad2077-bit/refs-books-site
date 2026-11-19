@@ -479,6 +479,11 @@
     return used() < limit();
   }
 
+  /* открывалась ли эта книга раньше — тогда лимит на неё не тратится */
+  function hasOpened(id) {
+    return isSubscriber() || A.opened.indexOf(id) >= 0;
+  }
+
   /* засчитать открытие (вызывается, когда текст реально показан) */
   function markOpened(id) {
     if (isSubscriber()) return;
@@ -683,7 +688,7 @@
     cancel: cancel,
 
     limit: limit, used: used, left: left,
-    canRead: canRead, markOpened: markOpened,
+    canRead: canRead, markOpened: markOpened, hasOpened: hasOpened,
 
     inviteLink: inviteLink,
     creditInvite: creditInvite,

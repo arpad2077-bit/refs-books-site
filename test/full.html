@@ -52,7 +52,9 @@ async function run() {
     ok(/Авторские права/.test($('#w-doc-holder').textContent), 'пользователь видит «Авторские права» вместо текста Фауста');
     app.setDev(true); await wait(200);
     $$('#w-dev input[name=dst]').filter(function (x) { return x.value === ''; })[0].click(); await wait(100);
-    app.setDev(false); await wait(800);
+    app.setDev(false); await wait(500);
+    var ob = $('#w-doc-holder [data-open-book]');
+    if (ob) { ob.click(); await wait(800); }
     ok(!!$('#w-doc-holder .rd-doc'), 'после снятия пометки текст Фауста снова виден');
 
     /* 3. отметки на карте разработчика: есть текст / нет */
@@ -133,10 +135,41 @@ async function run() {
     A.data.journey.active = false; A.save();
 
     /* 8. лимит гостя */
-    A.cancel(); A.data.opened = ['a', 'b', 'c', 'd', 'e']; A.data.invites = 0; A.save();
+    A.cancel(); A.data.opened = []; A.data.invites = 0; A.data.finished = []; A.save();
+
+    /* новая книга — сначала подтверждение, текст ещё не показан */
+    W.location.hash = '#/catalog'; await wait(100);
+    W.location.hash = '#/w/faust'; await wait(500);
+    ok(/Открыть этот текст/.test($('#w-doc-holder').textContent) && !$('#w-doc-holder .rd-doc'), 'гость: перед новой книгой — подтверждение открытия');
+    ok(A.used() === 0, 'до подтверждения лимит не тратится: открыто ' + A.used());
+    $('#w-doc-holder [data-open-book]').click(); await wait(800);
+    ok(!!$('#w-doc-holder .rd-doc') && A.used() === 1, 'после «Открыть книгу» текст виден, засчитано 1 из ' + A.limit());
+
+    /* отметка «прочитано» не тратит бесплатные книги */
+    ['iliad', 'odyssey', 'aeneid', 'hamlet'].forEach(function (id) { A.finish(id); });
+    ok(A.used() === 1, 'отметка «прочитано» не тратит лимит: открыто ' + A.used());
+
+    /* уже открытая книга — без повторного подтверждения */
+    W.location.hash = '#/catalog'; await wait(100);
+    W.location.hash = '#/w/faust'; await wait(800);
+    ok(!!$('#w-doc-holder .rd-doc') && !$('#w-doc-holder [data-open-book]'), 'ранее открытая книга открывается сразу, без подтверждения');
+
+    /* исчерпали лимит: «Фауст» — новая, ещё не открытая книга */
+    A.data.opened = ['a', 'b', 'c', 'd', 'e']; A.save();
+    W.location.hash = '#/catalog'; await wait(100);
     W.location.hash = '#/w/faust'; await wait(500);
     ok(/Бесплатные книги закончились/.test($('#w-doc-holder').textContent), 'гость после 5 книг видит ограничение');
-    A.creditInvite(1); W.location.hash = '#/catalog'; await wait(100); W.location.hash = '#/w/faust'; await wait(800);
+    ok(!!$('#w-doc-holder a[href="#/subscribe"]') && !!$('#w-doc-holder a[href="#/profile"]'), 'предлагает подписку или приглашение друга');
+
+    /* ранее открытая книга остаётся доступна и после исчерпания лимита */
+    A.data.opened = ['faust', 'a', 'b', 'c', 'd']; A.save();
+    W.location.hash = '#/catalog'; await wait(100);
+    W.location.hash = '#/w/faust'; await wait(800);
+    ok(!!$('#w-doc-holder .rd-doc'), 'после исчерпания лимита ранее открытая книга по-прежнему доступна');
+
+    A.data.opened = ['a', 'b', 'c', 'd', 'e']; A.save();
+    A.creditInvite(1); W.location.hash = '#/catalog'; await wait(100); W.location.hash = '#/w/faust'; await wait(500);
+    var ob2 = $('#w-doc-holder [data-open-book]'); if (ob2) { ob2.click(); await wait(800); }
     ok(!!$('#w-doc-holder .rd-doc'), 'приглашение друга открывает ещё одну книгу');
     ok($('#rd-download').disabled, 'гость не может скачать текст');
     ok(!$('.ad-slot[data-ad-slot=reader-left]').hidden, 'гость видит рекламу у текста');

@@ -1095,21 +1095,69 @@
       return;
     }
 
-    /* лимит гостя */
-    if (!S.dev && !Acc.canRead(w.id)) {
+    /* гостю каждое новое произведение открывается после подтверждения */
+    var guest = !S.dev && !Acc.isSubscriber();
+    if (guest && !Acc.hasOpened(w.id)) {
+      if (!Acc.canRead(w.id)) {
+        setReaderTools(false, w);
+        $('#rd-foot').hidden = true;
+        showPaywall(w);
+        return;
+      }
       setReaderTools(false, w);
-      $('#rd-foot').hidden = true;
-      placeholder('<span class="ph-big">Бесплатные книги закончились</span>' +
-        '<small>Гостям доступно ' + Acc.FREE_BOOKS + ' книг бесплатно и ещё по одной за каждого приглашённого друга. ' +
-        'Вы уже открыли ' + Acc.used() + ' из ' + Acc.limit() + '.</small>' +
-        '<div class="ph-actions"><a class="tb prim" href="#/subscribe">Оформить подписку</a>' +
-        '<a class="tb" href="#/profile">Пригласить друга</a></div>');
+      showOpenPrompt(w);
       return;
     }
 
-    setReaderTools(true, w);
-    holder.innerHTML = '<div class="ph">Загрузка текста…</div>';
+    loadText(w);
+  }
+
+  /* гостю кончились бесплатные книги */
+  function showPaywall(w) {
+    placeholder('<span class="ph-big">Бесплатные книги закончились</span>' +
+      '<small>Гостям доступно ' + Acc.FREE_BOOKS + ' книг бесплатно и ещё по одной за каждого приглашённого друга. ' +
+      'Вы уже открыли ' + Acc.used() + ' из ' + Acc.limit() + '. ' +
+      'Открытые раньше книги остаются доступны.</small>' +
+      '<div class="ph-actions"><a class="tb prim" href="#/subscribe">Оформить подписку</a>' +
+      '<a class="tb" href="#/profile">Пригласить друга и получить книгу</a></div>');
+  }
+
+  /* подтверждение открытия нового произведения у гостя */
+  function showOpenPrompt(w) {
+    var left = Acc.left();
+    var inv = Acc.data.invites || 0;
+    placeholder('<span class="ph-big">Открыть этот текст?</span>' +
+      '<small>Гостям доступно ' + Acc.FREE_BOOKS + ' книг бесплатно' +
+        (inv ? ' и ещё ' + inv + ' за приглашённых друзей' : '') + '. ' +
+        'После открытия «' + esc(w.title) + '» останется <b>' + Math.max(0, left - 1) +
+        '</b> из <b>' + Acc.limit() + '</b>. Уже открытые книги всегда доступны.</small>' +
+      '<div class="ph-actions"><button class="tb prim" data-open-book="' + esc(w.id) + '">Открыть книгу</button>' +
+      '<button class="tb" data-open-cancel>Не сейчас</button></div>');
+    var ok = $('#w-doc-holder [data-open-book]');
+    if (ok) ok.onclick = function () {
+      if (!Acc.canRead(w.id)) { showPaywall(w); return; }
+      Acc.markOpened(w.id);
+      loadText(w);
+    };
+    var no = $('#w-doc-holder [data-open-cancel]');
+    if (no) no.onclick = function () {
+      placeholder('<span class="ph-big">Книга не открыта</span>' +
+        '<small>Вы можете открыть её позже — бесплатные книги не потрачены. ' +
+        'Осталось открытий: <b>' + Acc.left() + '</b> из <b>' + Acc.limit() + '</b>.</small>' +
+        '<div class="ph-actions"><button class="tb prim" data-open-again>Открыть книгу</button>' +
+        '<a class="tb" href="#/profile">Пригласить друга</a></div>');
+      var again = $('#w-doc-holder [data-open-again]');
+      if (again) again.onclick = function () { openReader(w); };
+    };
+  }
+
+  /* сам текст произведения */
+  function loadText(w) {
     var myId = w.id;
+    var holder = $('#w-doc-holder');
+    holder.classList.remove('empty');
+    holder.innerHTML = '<div class="ph">Загрузка текста…</div>';
+    setReaderTools(true, w);
     getDocHtml(w).then(function (html) {
       if (S.route.name !== 'work' || S.route.id !== myId) return;
       if (!html) { placeholder('<span class="ph-big st-later">Добавится позже</span><small>Не удалось загрузить текст.</small>'); setReaderTools(false, w); return; }
@@ -2151,50 +2199,72 @@
       var r = stage.getBoundingClientRect();
       zoomAt(Math.pow(1.0016, -ev.deltaY), ev.clientX - r.left, ev.clientY - r.top);
     }, { passive: false });
-    var drag = null, downAt = null, moved = 0;
-    var far = function (x, y) { return Math.abs(x - downAt.x) + Math.abs(y - downAt.y) > 5; };
+    var drag = null, downAt = null, moved = 0, suppressClick = false;
+    var pend = null;
 
+    /* сдвиг применяем сразу: отложенный через requestAnimationFrame
+       кадр в части окружений не приходит, и карта «залипает» */
+    function paintDrag() {
+      if (!pend) return;
+      S.view.x = pend.x; S.view.y = pend.y;
+      applyView(); drawMini();
+      pend = null;
+    }
+
+    /* карту можно тащить, начав в любом месте: и на пустом фоне,
+       и на плитке произведения — плитка сработает как ссылка только
+       если мышь не сдвинулась */
     stage.addEventListener('pointerdown', function (ev) {
-      if (ev.button !== 0 || ev.target.closest('.node,.item,.minimap,.map-title')) return;
+      if (ev.button !== 0) return;
+      if (ev.target.closest('.minimap,.map-title')) return;
       var card = $('#intro-card');
       if (!card.hidden) {
-        /* клик мимо карточки — осмотреться на карте, не выходя из маршрута */
-        if (ev.target.closest('#intro-card')) return;
-        hideIntroCard();
+        if (!ev.target.closest('#intro-card')) hideIntroCard();
         return;
       }
       downAt = { x: ev.clientX, y: ev.clientY };
       moved = 0;
+      suppressClick = false;
       drag = { x: ev.clientX, y: ev.clientY, vx: S.view.x, vy: S.view.y };
       stage.classList.add('drag');
     });
-    /* перетаскивание слушаем на всём окне: курсор может уйти за край
-       карты или за пределы окна — карта не должна из-за этого «залипать» */
-    window.addEventListener('pointermove', function (ev) {
+
+    function onMove(ev) {
       if (!drag) return;
       var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
-      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) moved = 1;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 4) moved = 1;
       if (!moved) return;
-      S.view.x = drag.vx + dx; S.view.y = drag.vy + dy;
-      applyView(); drawMini();
-    });
-    ['pointerup', 'pointercancel'].forEach(function (t) {
-      window.addEventListener(t, function (ev) {
-        if (!drag) return;
-        var wasDrag = moved || (downAt && far(ev.clientX, ev.clientY));
-        drag = null;
-        stage.classList.remove('drag');
-        /* левый клик по пустому месту карты (без перетаскивания) —
-           выйти из режима «по порядку» и осматривать карту */
-        if (!wasDrag && downAt && S.route.name === 'map' &&
-            !ev.target.closest('.node,.item,.minimap,.map-title,#intro-card')) {
-          var j = Acc.data.journey;
-          if (j && j.active) exitJourney();
-        }
-        downAt = null;
-      });
-    });
-    stage.addEventListener('click', function (ev) { downAt = null; });
+      pend = { x: drag.vx + dx, y: drag.vy + dy };
+      paintDrag();
+    }
+    stage.addEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onMove);
+
+    function onUp(ev) {
+      if (!drag) return;
+      var wasDrag = moved > 0;
+      drag = null;
+      if (pend) { S.view.x = pend.x; S.view.y = pend.y; applyView(); drawMini(); pend = null; }
+      stage.classList.remove('drag');
+      if (wasDrag) {
+        /* после перетаскивания плитка не должна открывать страницу */
+        suppressClick = true;
+        setTimeout(function () { suppressClick = false; }, 0);
+      } else if (downAt && S.route.name === 'map' &&
+                 !ev.target.closest('.node,.item,.minimap,.map-title,#intro-card')) {
+        /* короткий клик по пустому месту — выйти из режима «по порядку» */
+        var j = Acc.data.journey;
+        if (j && j.active) exitJourney();
+      }
+      downAt = null;
+    }
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+
+    /* клик после перетаскивания гасим до того, как он дойдёт до плитки */
+    stage.addEventListener('click', function (ev) {
+      if (suppressClick) { ev.preventDefault(); ev.stopPropagation(); suppressClick = false; }
+    }, true);
     $('#nodes').addEventListener('mouseover', function (ev) {
       var el = ev.target.closest('[data-id]');
       if (!el || (ev.relatedTarget && el.contains(ev.relatedTarget))) return;

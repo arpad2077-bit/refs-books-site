@@ -85,7 +85,7 @@ a{color:var(--acc);text-decoration:none}
 .view.on{display:block}
 #view-map{position:fixed;inset:56px 0 0 0;overflow:hidden}
 #stage{
-  position:absolute;inset:0;overflow:hidden;cursor:grab;
+  position:absolute;inset:0;overflow:hidden;cursor:grab;touch-action:none;
   background:
     radial-gradient(circle at 1px 1px,rgba(255,255,255,.055) 1px,transparent 0) 0 0/28px 28px,
     radial-gradient(ellipse at 50% 40%,#181b22 0%,#0f1013 70%);
