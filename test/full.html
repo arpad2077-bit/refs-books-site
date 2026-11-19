@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>full-test</title>
+<style>body{margin:0;background:#111;color:#ddd;font:13px monospace}pre{white-space:pre-wrap;padding:8px}
+iframe{position:fixed;right:0;bottom:0;width:1400px;height:900px;border:0;opacity:.02}</style></head>
+<body><pre id="out">…</pre>
+<iframe id="fr" src="../index.html"></iframe>
+<script>
+var out = [], fr = document.getElementById('fr');
+function log(s) { out.push(s); document.getElementById('out').textContent = out.join('\n'); }
+function ok(c, s) { log((c ? 'OK   ' : 'FAIL ') + s); }
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+fr.onload = function () { setTimeout(run, 700); };
+
+async function run() {
+  var W = fr.contentWindow, D = fr.contentDocument;
+  var $ = function (s) { return D.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(D.querySelectorAll(s)); };
+  var A = W.Account, S = W.__map, app = W.__app;
+  localStorage.clear(); // чистый старт этого теста не влияет на iframe-хранилище до перезагрузки
+  try {
+    /* 1. режим пользователя: элементы разработчика скрыты */
+    app.setDev(false);
+    W.location.hash = '#/w/faust'; await wait(400);
+    ok(getComputedStyle($('#btn-upload')).display === 'none', 'пользователь: кнопки «Загрузить» нет');
+    ok($('#w-dev').innerHTML === '', 'пользователь: панели разработчика на странице нет');
+
+    /* 2. режим разработчика */
+    app.setDev(true); await wait(300);
+    ok(getComputedStyle($('#btn-upload')).display !== 'none', 'разработчик: кнопка «Загрузить» есть');
+    ok(!!$('#w-dev [data-dev-upload]'), 'разработчик: панель с загрузкой текста');
+    ok(!!$('#dev-ann'), 'разработчик: поле аннотации');
+
+    /* аннотация */
+    $('#dev-ann').value = 'Тестовая аннотация.'; $('#w-dev [data-dev-ann]').click();
+    ok(app.annotationOf('faust') === 'Тестовая аннотация.', 'аннотация сохраняется');
+
+    /* пометки текста */
+    W.location.hash = '#/w/gilgamesh'; await wait(300);
+    ok(app.textState(S.works.get('gilgamesh')) === 'later', 'без текста: «Добавится позже» автоматически');
+    var r = $$('#w-dev input[name=dst]').filter(function (x) { return x.value === 'lost'; })[0];
+    r.checked = true; r.dispatchEvent(new Event('change')); await wait(100);
+    ok(app.textState(S.works.get('gilgamesh')) === 'lost', 'разработчик ставит «До нас не дошёл»');
+    var r2 = $$('#w-dev input[name=dst]').filter(function (x) { return x.value === 'copyright'; })[0];
+    r2.checked = true; r2.dispatchEvent(new Event('change')); await wait(100);
+    ok(app.textState(S.works.get('gilgamesh')) === 'copyright', 'разработчик ставит «Авторские права»');
+
+    /* копирайт скрывает загруженный текст у пользователя */
+    W.location.hash = '#/w/faust'; await wait(200);
+    $$('#w-dev input[name=dst]').filter(function (x) { return x.value === 'copyright'; })[0].click(); await wait(100);
+    app.setDev(false); await wait(300);
+    ok(/Авторские права/.test($('#w-doc-holder').textContent), 'пользователь видит «Авторские права» вместо текста Фауста');
+    app.setDev(true); await wait(200);
+    $$('#w-dev input[name=dst]').filter(function (x) { return x.value === ''; })[0].click(); await wait(100);
+    app.setDev(false); await wait(800);
+    ok(!!$('#w-doc-holder .rd-doc'), 'после снятия пометки текст Фауста снова виден');
+
+    /* 3. отметки на карте разработчика: есть текст / нет */
+    app.setDev(true); W.location.hash = '#/map'; await wait(400);
+    ok(!!$('#nodes .node.has-text[data-id=faust]') && !!$('#nodes .node.no-text[data-id=iliad]'), 'разработчик видит на карте, где текст есть, а где нет');
+    app.setDev(false); await wait(300);
+
+    /* 4. аннотация в облаке и её отключение */
+    var el = $('#nodes [data-id=hamlet]');
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await wait(450);
+    ok(!$('#ann-tip').hidden && /Принц/.test($('#ann-tip').textContent), 'облако с аннотацией при наведении');
+    el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    $('#btn-ann').click(); await wait(50);
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await wait(450);
+    ok($('#ann-tip').hidden, 'кнопка «Отключить аннотации» работает');
+    $('#btn-ann').click();
+
+    /* 5. переключатель вида карты */
+    $('#view-switch [data-mapview=epochs]').click(); await wait(400);
+    ok($$('#bands .band').length === 6, 'вид по эпохам: 6 подписей эпох');
+    ok($$('#nodes .node.alt').length > 0, 'альтернативные маршруты нарисованы: ' + $$('#nodes .node.alt').length + ' узлов');
+    ok($$('#edges path.fork').length > 0, 'соединительные отрезки от мест расхождения: ' + $$('#edges path.fork').length);
+
+    /* параллельная линия смещается, когда раскрыта ветка её собственного узла */
+    var altNode = $('#nodes .node.alt[data-id="don-quixote"]');
+    var yBefore = parseFloat(altNode.style.top);
+    S.open.add('don-quixote');
+    $('#view-switch [data-mapview=global]').click(); await wait(200);
+    $('#view-switch [data-mapview=epochs]').click(); await wait(400);
+    var altAfter = $('#nodes .node.alt[data-id="don-quixote"]');
+    var yAfter = parseFloat(altAfter.style.top);
+    log('     y альтернативной линии: ' + yBefore + ' → ' + yAfter + ', элементов веток: ' + $$('#nodes .item').length);
+    ok(yAfter < yBefore, 'линия смещается под раскрытую ветку отсылок');
+    var overlap = false;
+    $$('#nodes .node.alt').forEach(function (a) {
+      var ar = a.getBoundingClientRect();
+      $$('#nodes .item').forEach(function (it) {
+        var ir = it.getBoundingClientRect();
+        if (!(ar.right < ir.left || ar.left > ir.right || ar.bottom < ir.top || ar.top > ir.bottom)) overlap = true;
+      });
+    });
+    ok(!overlap, 'альтернативные линии не перекрывают раскрытые ветки отсылок');
+    S.open.clear();
+    $('#view-switch [data-mapview=global]').click(); await wait(300);
+
+    /* 6. онбординг */
+    A.data.onboarded = false; A.save();
+    W.location.hash = '#/'; await wait(200);
+    $('#home-start').click(); await wait(150);
+    ok(/свободном режиме или по порядку/.test($('#ask-body').textContent), 'вопрос «свободный режим или по порядку?»');
+    $('#ask-body [data-v=order]').click(); await wait(150);
+    ok(/глобальной хронологии или по временным эпохам/i.test($('#ask-body').textContent), 'второй вопрос — «глобальная или по эпохам?»');
+    $('#ask-body [data-v=global]').click(); await wait(2700);
+    ok(A.data.journey.current === 'gilgamesh', 'маршрут начат с первого произведения: ' + A.data.journey.current);
+    ok(!$('#intro-card').hidden && /Эпос о Гильгамеше/.test($('#intro-card').textContent), 'карточка: название, аннотация, «НАЧАТЬ»');
+
+    /* 7. маршрут: главная → боковая → выбор */
+    A.data.journey.mainIdx = 12; A.data.journey.current = 'faust'; A.data.journey.stack = []; A.save();
+    W.location.hash = '#/w/faust'; await wait(500);
+    $('#rd-finish').click(); await wait(200);
+    var j = A.data.journey;
+    ok(j.stack.length === 1 && j.stack[0].owner === 'faust', 'после главной книги — переход на её боковую линию (' + j.stack[0].list.length + ' книг), сейчас: ' + S.works.get(j.current).title);
+    await wait(2500); $('#intro-card').hidden = true;
+    /* сделаем у текущей боковой книги собственные отсылки */
+    var side = j.current;
+    S.edges.push({ from: side, to: 'tristram' });
+    W.location.hash = '#/w/' + encodeURIComponent(side); await wait(400);
+    $('#rd-finish').click(); await wait(200);
+    ok(/Что читать дальше/.test($('#ask-body').textContent) && /Перейти к следующей хронологической линии/.test($('#ask-body').textContent) && /Вернуться к главной хронологической линии/.test($('#ask-body').textContent), 'у боковой книги со своими отсылками — выбор «дальше / главная линия»');
+    $('#ask-body [data-v=main]').click(); await wait(300);
+    ok(A.data.journey.current === 'karamazov' && A.data.journey.stack.length === 0, 'выбор «к главной линии» → следующая книга: ' + A.data.journey.current);
+    await wait(2500); $('#intro-card').hidden = true;
+    A.data.journey.active = false; A.save();
+
+    /* 8. лимит гостя */
+    A.cancel(); A.data.opened = ['a', 'b', 'c', 'd', 'e']; A.data.invites = 0; A.save();
+    W.location.hash = '#/w/faust'; await wait(500);
+    ok(/Бесплатные книги закончились/.test($('#w-doc-holder').textContent), 'гость после 5 книг видит ограничение');
+    A.creditInvite(1); W.location.hash = '#/catalog'; await wait(100); W.location.hash = '#/w/faust'; await wait(800);
+    ok(!!$('#w-doc-holder .rd-doc'), 'приглашение друга открывает ещё одну книгу');
+    ok($('#rd-download').disabled, 'гость не может скачать текст');
+    ok(!$('.ad-slot[data-ad-slot=reader-left]').hidden, 'гость видит рекламу у текста');
+
+    /* 9. закладки, прогресс и выделения */
+    var holder = $('#w-doc-holder');
+    holder.scrollTop = 4000; holder.dispatchEvent(new Event('scroll')); await wait(700);
+    A.unfinish('faust');
+    ok(A.data.progress.faust > 0, 'прогресс чтения: ' + Math.round(A.data.progress.faust * 100) + '%');
+    ok(!!A.bookmarks('faust').main, 'главная закладка «где остановился» сохранена');
+    ok(!$('#rd-mark'), 'кнопки «＋ Закладка» больше нет');
+
+    /* закладка по правому клику */
+    function ctxLine(idx) {
+      var ln = $$('.rd-doc .l')[idx];
+      if (!ln) return null;
+      var r0 = ln.getBoundingClientRect();
+      ln.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, button: 2,
+        clientX: r0.left + 6, clientY: r0.top + 6
+      }));
+      return ln;
+    }
+    ctxLine(30); await wait(120);
+    ok(!$('#bm-pop').hidden, 'правый клик открывает меню закладки');
+    var btns = $$('#bm-pop button[data-bmc]');
+    ok(btns.length >= 7, 'в меню есть главная закладка и цветные: ' + btns.length);
+    ok($$('#bm-pop .sw.main').length === 1, 'главная закладка отмечена тёмно-красным');
+
+    var mainBefore = A.bookmarks('faust').main && A.bookmarks('faust').main.pos;
+    btns.filter(function (b) { return b.hasAttribute('data-main'); })[0].click(); await wait(150);
+    var mainAfter = A.bookmarks('faust').main.pos;
+    log('     позиция главной закладки: ' + mainBefore + ' → ' + mainAfter);
+    ok(mainAfter > 0 && $('#bm-pop').hidden, 'главная закладка поставлена на место клика');
+
+    ctxLine(40); await wait(120);
+    ok(!$('#bm-pop').hidden, 'меню открывается повторно');
+    $$('#bm-pop button[data-bmc]').filter(function (b) { return b.getAttribute('data-bmc') === 'c2'; })[0].click(); await wait(150);
+    ok(A.bookmarks('faust').marks.length === 1, 'цветная закладка добавлена по правому клику');
+    var mkColor = A.bookmarks('faust').marks[0].color;
+    ok(/^#/.test(mkColor) && mkColor !== '#8f1f3f', 'у закладки свой цвет: ' + mkColor);
+    ok(/№1/.test($('#bm-list').textContent), 'закладка № 1 видна в списке');
+    var line = $$('.rd-doc .l')[40];
+    var rng = D.createRange(); rng.selectNodeContents(line);
+    W.getSelection().removeAllRanges(); W.getSelection().addRange(rng);
+    var sw = W.__readerHL || null;
+    $$('#hl-bar [data-hl]')[0].click(); await wait(100);
+    ok($$('.rd-doc mark.rd-mark').length > 0 && A.highlights('faust').length === 1, 'цитата выделена');
+    line = $$('.rd-doc .l')[60]; rng = D.createRange(); rng.selectNodeContents(line);
+    W.getSelection().removeAllRanges(); W.getSelection().addRange(rng);
+    $$('#hl-bar [data-hl]')[1].click(); await wait(100);
+    ok($$('.rd-doc mark.rd-under').length > 0, 'цитата подчёркнута');
+    D.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true })); await wait(100);
+    ok($$('.rd-doc mark.rd-under').length === 0, 'Backspace отменяет подчёркивание');
+
+    /* 10. полный экран: только текст, единственная кнопка — крестик */
+    ok(/Полный экран/.test($('#rd-full').textContent), 'кнопка «Полный экран» вместо «Свернуть»');
+    $('#rd-full').click(); await wait(300);
+    ok($('#doc-pane').classList.contains('fs'), 'режим полного экрана включён');
+    ok(!$('#rd-exit').hidden, 'в полном экране виден крестик выхода');
+    ok($('#rd-exit').textContent.trim() === '✕', 'у крестика нет подписи');
+    ok(getComputedStyle($('.pane-head')).display === 'none', 'шапка с кнопками скрыта');
+    ok(getComputedStyle($('#rd-foot')).display === 'none', 'кнопки «Я дочитал(а)» в полном экране нет');
+    ok(getComputedStyle($('.rd-progress')).display === 'none', 'полоска прогресса скрыта');
+    ok(!!$('#w-doc-holder .rd-doc'), 'текст произведения остаётся — вместе с блоком отсылок');
+    var hasRefsInDoc = /note|ref/i.test($('#w-doc-holder').innerHTML);
+    log('     отсылки внутри документа в полном экране: ' + (hasRefsInDoc ? 'есть' : 'нет'));
+    $('#rd-exit').click(); await wait(200);
+    ok(!$('#doc-pane').classList.contains('fs') && getComputedStyle($('.pane-head')).display !== 'none', 'крестик возвращает в оконный режим');
+
+    /* 11. подписка */
+    W.location.hash = '#/subscribe'; await wait(200);
+    $('#subscribe-root [data-plan=month]').click(); await wait(50);
+    ok(/200/.test($('#pay-btn').textContent), 'тариф «месяц» — 200 ₽');
+    $('#subscribe-root [data-plan=lifetime]').click(); await wait(50);
+    ok(/2[\s  ]500/.test($('#pay-btn').textContent), 'тариф «бесконечный» — 2500 ₽');
+    $('#subscribe-root [data-method=sbp]').click(); await wait(50);
+    $('#pay-btn').click(); await wait(1300);
+    ok(A.isSubscriber(), 'после оплаты (демо) — статус «Подписчик»');
+    W.location.hash = '#/w/faust'; await wait(800);
+    ok(!$('#rd-download').disabled, 'подписчик может скачать текст');
+    ok(getComputedStyle($('.ad-slot[data-ad-slot=reader-left]')).display === 'none', 'у подписчика нет рекламы');
+
+    /* 12. профиль */
+    A.finish('iliad');
+    W.location.hash = '#/profile'; await wait(200);
+    var pt = $('#profile-root').textContent;
+    ok(/Подписчик/.test(pt) && /Читаю сейчас/.test(pt) && /Фауст/.test(pt), 'профиль: статус и «Читаю сейчас» с Фаустом');
+    ok(!!$('#profile-root .b-bar i'), 'под книгой в процессе — полоска прочитанного');
+    ok(/Илиада/.test($('#profile-root .books.done').textContent), 'профиль: список прочитанных');
+
+    /* 13. каталог */
+    W.location.hash = '#/catalog'; await wait(200);
+    var n1 = +$('.big-cnt').textContent;
+    S.works.set('zz-test', { id: 'zz-test', title: 'Тестовая книга', sort: 9999 });
+    W.location.hash = '#/profile'; await wait(50); W.location.hash = '#/catalog'; await wait(200);
+    ok(+$('.big-cnt').textContent === n1 + 1, 'каталог: ' + n1 + ' → ' + $('.big-cnt').textContent + ' при добавлении произведения');
+
+    /* 14. розыгрыш */
+    var R = W.Raffle;
+    ok(!!$('#topbar .raffle-link'), 'кнопка «Розыгрыш» в шапке сайта');
+    W.location.hash = '#/raffle'; await wait(300);
+    ok(/Розыгрыш годовой подписки/.test($('#raffle-root').textContent), 'страница розыгрыша открывается');
+    ok(R.CONFIG.price === 70 && R.CONFIG.size === 22 && R.CONFIG.prizeDays === 365, 'условия: взнос 70 ₽, 22 участника, год подписки');
+    ok(/70/.test($('#raffle-root').textContent), 'на странице указан взнос 70 ₽');
+
+    A.cancel(); A.data.plan = null; A.data.paidUntil = null; A.save();
+    /* взнос не выдаёт подписку */
+    $('#rf-paybtn').click(); await wait(1300);
+    ok(!A.isSubscriber(), 'взнос за розыгрыш не выдаёт подписку');
+    ok(R.isJoined() && R.count() === 1, 'после оплаты — участие в розыгрыше');
+    ok(/Вы участвуете/.test($('#raffle-root').textContent), 'видно состояние ожидания набора участников');
+
+    /* набор 22 участников запускает розыгрыш */
+    R.fillDemo(); await wait(100);
+    ok(R.count() === 22 && R.ready(), 'набрано 22 участника — розыгрыш готов начаться');
+    app.setDev(true); W.location.hash = '#/profile'; await wait(50);
+    W.location.hash = '#/raffle'; await wait(200);
+    $('#rf-fill').click(); await wait(2600);
+    ok(!!R.data.drawn, 'стрелка провела розыгрыш: ' + (R.data.drawn && R.data.drawn.winner.name));
+    var w = R.data.drawn.winner;
+    ok(R.data.entries.length === 22, 'в розыгрыше участвовали все 22');
+    log('     победитель: ' + w.name + ', промокодов в профиле: ' + A.promos().length);
+
+    /* промокод победителю: привязка к профилю */
+    var granted = R.data.drawn.code ? A.hasPromo(R.data.drawn.code) : false;
+    ok(w.me ? granted : A.promos().length === 0, 'промокод выдан только профилю победителя');
+
+    /* промокод не перепродать: чужой код не активируется */
+    var other = A.redeemPromo('RFS-999ZZZZ-YYYY');
+    ok(!other.ok, 'чужой промокод не активируется: ' + other.error);
+
+    /* выдадим промокод этому профилю и проверим суммирование */
+    A.activate('month'); A.data.paidUntil = Date.now() + 10 * 86400000; A.save();
+    var before10 = A.data.paidUntil;
+    A.grantPromo('RFS-TEST-0001', 365, 'test'); await wait(50);
+    W.location.hash = '#/profile'; await wait(200);
+    ok(!!$('#promo-in') && /RFS-TEST-0001/.test($('#profile-root').textContent), 'промокод виден в профиле со строкой ввода');
+    $('#promo-in').value = 'RFS-TEST-0001'; $('#promo-go').click(); await wait(300);
+    var added = Math.round((A.data.paidUntil - before10) / 86400000);
+    ok(added === 365, 'срок промокода прибавился к подписке: +' + added + ' дней');
+    ok(!A.redeemPromo('RFS-TEST-0001').ok, 'повторно тот же промокод не активируется');
+
+    /* два выигрыша — сроки складываются */
+    A.grantPromo('RFS-TEST-0002', 365, 'test'); await wait(30);
+    var before2 = A.data.paidUntil;
+    var r2 = A.redeemPromo('RFS-TEST-0002');
+    ok(r2.ok && Math.round((A.data.paidUntil - before2) / 86400000) === 365, 'второй промокод складывается с первым');
+    app.setDev(false);
+
+
+    log('\nГОТОВО');
+  } catch (e) { log('ОШИБКА: ' + e.message + '\n' + e.stack); }
+  document.title = 'DONE';
+}
+</script></body></html>

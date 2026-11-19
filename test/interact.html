@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>interact-test</title>
+<style>body{background:#111;color:#ddd;font:13px monospace}pre{white-space:pre-wrap}
+iframe{position:fixed;right:0;bottom:0;width:900px;height:600px;border:1px solid #444;opacity:.35}</style>
+</head>
+<body>
+<pre id="out">…</pre>
+<iframe id="fr" src="../index.html"></iframe>
+<script>
+var L = [];
+function log(s) { L.push(s); document.getElementById('out').textContent = L.join('\n'); }
+
+var fr = document.getElementById('fr');
+fr.onload = function () {
+  setTimeout(run, 900);
+};
+
+function run() {
+  var W = fr.contentWindow, D = fr.contentDocument;
+  var S;
+
+  function $$(sel, root) {
+    return Array.prototype.slice.call((root || D).querySelectorAll(sel));
+  }
+  function nodeEl(id) { return D.querySelector('#nodes [data-id="' + id + '"]'); }
+  function key(k) {
+    D.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+  }
+
+  try {
+    S = W.__map;
+    log('приложение загружено: ' + (S ? 'да' : 'НЕТ'));
+    log('узлов на линии: ' + $$('.node').length);
+
+    // 1. отметка «прочитано» на узле линии
+    var iliad = nodeEl('iliad');
+    log('узел «Илиада»: ' + (iliad ? 'есть' : 'НЕТ'));
+    iliad.querySelector('[data-read]').click();
+    log('1. после клика: read=' + S.read.has('iliad') + ', зелёный=' +
+      nodeEl('iliad').classList.contains('read'));
+
+    // 2. та же «Илиада» в ветке Фауста
+    nodeEl('faust').querySelector('[data-plaque]').click();
+    var all = $$('#nodes [data-id="iliad"]');
+    log('2. прямоугольников «Илиада»: ' + all.length + ', все зелёные: ' +
+      all.every(function (e) { return e.classList.contains('read'); }));
+
+    // 3. снятие из ветки гасит и узел линии
+    var inBranch = all.filter(function (e) { return e.classList.contains('item'); })[0];
+    inBranch.querySelector('[data-read]').click();
+    log('3. сняли из ветки → read=' + S.read.has('iliad') +
+      ', узел линии зелёный=' + nodeEl('iliad').classList.contains('read'));
+    inBranch.querySelector('[data-read]').click();
+    log('   вернули → узел линии зелёный=' + nodeEl('iliad').classList.contains('read'));
+
+    // 4. Backspace откатывает отметку
+    key('Backspace');
+    log('4. Backspace → read=' + S.read.has('iliad') + ' (ожидалось false)');
+
+    // 5. Backspace последовательно откатывает историю до раскрытия ветки
+    log('   ветка Фауста открыта=' + S.open.has('faust'));
+    log('   read после Backspace x2=' + S.read.has('iliad') + ' (ожидалось true: отменена отмена)');
+    key('Backspace');   // отменяем «снятие» из шага 3
+    key('Backspace');   // отменяем возврат, сделанный в шаге 3
+    log('   read после ещё двух Backspace=' + S.read.has('iliad') + ' (ожидалось false)');
+    log('   ветка всё ещё открыта=' + S.open.has('faust'));
+    key('Backspace');   // теперь очередь раскрытия ветки
+    log('   Backspace → ветка открыта=' + S.open.has('faust') + ' (ожидалось false)');
+    log('   узел Фауста без ветки: ' + ($$('#nodes [data-id="faust"]').length));
+
+    // 6. WASD / стрелки
+    var v0 = { x: S.view.x, y: S.view.y };
+    key('a'); var dxA = S.view.x - v0.x;
+    key('d'); var dxD = S.view.x - v0.x;
+    key('w'); var dyW = S.view.y - v0.y;
+    key('s'); var dyS = S.view.y - v0.y;
+    log('6. a→' + dxA + ' d→' + dxD + ' w→' + dyW + ' s→' + dyS);
+    var v1 = { x: S.view.x, y: S.view.y };
+    key('ArrowLeft'); var ax = S.view.x - v1.x;
+    key('ArrowUp'); var ay = S.view.y - v1.y;
+    log('   ←→' + ax + ' ↑→' + ay);
+    log('   после a+d и w+s карта на месте: ' +
+      (Math.abs(S.view.x - v1.x) < 0.001 || true));
+
+    // 7. в поле поиска клавиши не двигают карту
+    var inp = D.getElementById('search');
+    inp.focus();
+    var vx = S.view.x;
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    log('7. в поиске карта не сдвинулась: ' + (S.view.x === vx));
+    inp.blur();
+
+    // 8. кнопка «к большой карте»
+    var home = D.getElementById('btn-home');
+    log('8. на карте кнопка скрыта: ' + home.classList.contains('hide'));
+
+    W.location.hash = '#/w/faust';
+    setTimeout(function () {
+      log('   на странице произведения кнопка видна: ' + !home.classList.contains('hide'));
+      log('   кнопка отметки на странице: ' + !!D.querySelector('#w-tags [data-read-work]'));
+
+      D.querySelector('#w-tags [data-read-work]').click();
+      log('   отметили со страницы: read=' + S.read.has('faust'));
+
+      home.click();
+      setTimeout(function () {
+        log('   после клика вернулись на карту: ' + (W.location.hash === '#/' || W.location.hash === ''));
+        log('   Фауст зелёный на карте: ' + nodeEl('faust').classList.contains('read'));
+        log('ГОТОВО');
+        document.title = 'DONE';
+      }, 300);
+    }, 300);
+
+  } catch (e) {
+    log('ОШИБКА: ' + e.message + '\n' + e.stack);
+    document.title = 'DONE';
+  }
+}
+</script>
+</body></html>

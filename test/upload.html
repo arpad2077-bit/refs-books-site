@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>upload-test</title></head>
+<body>
+<pre id="out">…</pre>
+<script src="../js/parser.js"></script>
+<script src="../js/docstore.js"></script>
+<script src="../js/spine.js"></script>
+<script src="../js/seed-faust.js"></script>
+<script src="../js/layout.js"></script>
+<script src="../js/app.js"></script>
+<script>
+setTimeout(function () {
+  var res = window.__map ? 'app ok' : 'NO APP';
+  var lines = [];
+
+  // загрузка «нового» произведения по эталонному формату
+  var html = '<!DOCTYPE html><html><body><h1>Тестовое произведение</h1>' +
+    '<div id="notes"><h2>Отсылки</h2><h3>1. Глава первая</h3>' +
+    '<div class="note" id="n1"><div class="hd"><span class="num">1</span><span>Глава первая, с. 5</span></div>' +
+    '<div class="q">«цитата раз»</div>' +
+    '<p><span class="src">Источник:</span> Гомер, «Илиада»</p>' +
+    '<p><span class="src">Обоснование:</span> потому что.</p>' +
+    '<div class="nodes"><span class="chip">Илиада (Гомер)</span><span class="chip end">Одиссея (Гомер)</span></div>' +
+    '<a class="back" href="#r1">↑</a></div>' +
+    '<div class="note" id="n2"><div class="hd"><span class="num">2</span><span>Глава первая, с. 9</span></div>' +
+    '<div class="q">«цитата два»</div>' +
+    '<p><span class="src">Источник:</span> Тысяча и одна ночь</p>' +
+    '<p><span class="src">Обоснование:</span> мотив.</p>' +
+    '<div class="nodes"><span class="chip">Тысяча и одна ночь</span></div>' +
+    '<a class="back" href="#r2">↑</a></div>' +
+    '</div></body></html>';
+
+  var r = window.RefMapUpload(html, { title: 'Тестовое произведение', author: 'Тестовый автор' });
+  lines.push('upload: ' + JSON.stringify(r));
+
+  var S = window.__map;
+  lines.push('works total: ' + S.works.size);
+  lines.push('edges total: ' + S.edges.length);
+
+  var out = S.edges.filter(function (e) { return e.from === r.id; })
+    .map(function (e) { return S.works.get(e.to).title; });
+  lines.push('out: ' + out.join(' | '));
+
+  // «Илиада» должна теперь иметь входящую ссылку
+  var iliad = null;
+  S.works.forEach(function (w) { if (w.title.indexOf('Илиада') === 0) iliad = w; });
+  var incoming = S.edges.filter(function (e) { return e.to === iliad.id; })
+    .map(function (e) { return S.works.get(e.from).title; });
+  lines.push('Илиада <- ' + incoming.join(' | '));
+
+  // «Тысяча и одна ночь» — узел без отсылок
+  var night = null;
+  S.works.forEach(function (w) { if (w.title === 'Тысяча и одна ночь') night = w; });
+  lines.push('1001 ночь: ' + (night ? night.id + ', отсылок ' +
+    S.edges.filter(function (e) { return e.from === night.id; }).length : 'НЕТ'));
+
+  document.getElementById('out').textContent = lines.join('\n');
+  document.title = 'DONE';
+}, 400);
+</script>
+</body></html>

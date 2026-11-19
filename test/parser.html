@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>Тест парсера</title></head>
+<body>
+<pre id="out">запуск…</pre>
+<script src="../js/parser.js"></script>
+<script>
+var xhr = new XMLHttpRequest();
+xhr.open('GET', '../docs/faust.html', false);
+xhr.send(null);
+var html = xhr.responseText;
+var r = RefParser.parse(html, { title: 'Фауст' });
+
+var works = {};
+var errs = [];
+r.refs.forEach(function (x) {
+  if (!x.nodes.length) errs.push('отсылка без произведений: ' + x.n);
+  if (!x.quote) errs.push('без цитаты: ' + x.n);
+  if (!x.source) errs.push('без источника: ' + x.n);
+  x.nodes.forEach(function (n) { works[n.title] = 1; });
+});
+
+var lines = [
+  'режим: ' + r.mode,
+  'заголовок: ' + r.title,
+  'отсылок: ' + r.refs.length,
+  'произведений: ' + Object.keys(works).length,
+  'проблем: ' + errs.length
+].concat(errs.slice(0, 10));
+
+lines.push('', '--- примеры ---');
+r.refs.slice(0, 3).forEach(function (x) {
+  lines.push('#' + x.n + ' [' + x.section + '] ' + x.loc);
+  lines.push('  «' + x.quote.slice(0, 70) + '»');
+  lines.push('  источник: ' + x.source.slice(0, 80));
+  lines.push('  произведения: ' + x.nodes.map(function (n) { return n.title; }).join(' | '));
+});
+lines.push('', '--- одиночный плашка-тест ---');
+lines.push('фраза «Тысяча и одна ночь» найдена: ' + (works['Тысяча и одна ночь'] ? 'да' : 'НЕТ'));
+
+document.getElementById('out').textContent = lines.join('\n');
+document.title = 'DONE';
+</script>
+</body></html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>persist-read</title></head>
+<body>
+<pre id="out">…</pre>
+<iframe id="fr" src="../index.html" style="width:1200px;height:600px"></iframe>
+<script>
+var fr = document.getElementById('fr'), step = 0;
+fr.onload = function () {
+  setTimeout(function () {
+    var W = fr.contentWindow, D = fr.contentDocument;
+
+    if (step === 0) {
+      step = 1;
+      // отмечаем Гамлета и Илиаду
+      D.querySelector('#nodes [data-id="hamlet"] [data-read]').click();
+      D.querySelector('#nodes [data-id="iliad"] [data-read]').click();
+      var raw = W.localStorage.getItem('refmap.v1');
+      var data = JSON.parse(raw);
+      document.getElementById('out').textContent =
+        'сохранено в localStorage, read = ' + JSON.stringify(data.read);
+      setTimeout(function () { fr.src = '../index.html?reload=1'; }, 400);
+      return;
+    }
+
+    // после перезагрузки
+    var S = W.__map;
+    var hamlet = D.querySelector('#nodes [data-id="hamlet"]');
+    var iliad = D.querySelector('#nodes [data-id="iliad"]');
+    document.getElementById('out').textContent +=
+      '\nпосле перезагрузки: read=' + JSON.stringify(Array.from(S.read)) +
+      '\nГамлет зелёный: ' + hamlet.classList.contains('read') +
+      '\nИлиада зелёная: ' + iliad.classList.contains('read');
+    document.title = 'DONE';
+  }, 900);
+};
+</script>
+</body></html>

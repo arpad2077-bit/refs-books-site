@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refs.Books — карта литературных отсылок</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="at-home">
+
+<header id="topbar">
+  <a class="brand" href="#/" title="Главная">
+    <span class="logo"></span>
+    <span class="name">Refs<span class="dot">.</span>Books</span>
+  </a>
+
+  <!-- переключатель вида карты -->
+  <div class="seg map-only" id="view-switch" role="tablist" aria-label="Вид карты">
+    <button data-mapview="global" role="tab">Глобальная хронология</button>
+    <button data-mapview="epochs" role="tab">По эпохам</button>
+  </div>
+
+  <div class="search">
+    <input id="search" type="search" placeholder="Найти произведение…" autocomplete="off" spellcheck="false">
+  </div>
+
+  <nav class="actions">
+    <span class="map-only zoom">
+      <button id="btn-fit" class="tb" title="Вписать карту">Вписать</button>
+      <button id="btn-zoom-out" class="tb icon" title="Уменьшить">−</button>
+      <button id="btn-zoom-in" class="tb icon" title="Увеличить">+</button>
+    </span>
+    <button id="btn-ann" class="tb" title="Подсказки с аннотациями при наведении">Аннотации: вкл</button>
+    <a class="tb" href="#/catalog" title="Все произведения на сайте">Каталог</a>
+    <a class="tb raffle-link" href="#/raffle" title="Розыгрыш годовой подписки">Розыгрыш</a>
+    <button id="btn-upload" class="tb prim dev-only" title="Загрузить документ с отсылками">＋ Загрузить</button>
+    <a id="btn-profile" class="tb profile" href="#/profile" title="Профиль">
+      <span class="ava"></span><span id="profile-status">Гость</span>
+    </a>
+    <button id="btn-help" class="tb icon" title="Как это работает">?</button>
+  </nav>
+</header>
+
+<div id="dev-bar" class="dev-bar dev-only">
+  <b>Режим разработчика</b>
+  <span>изменения сохраняются в этом браузере — чтобы их увидели пользователи, сделайте экспорт</span>
+  <button id="dev-maint" class="mini" title="Закрыть сайт для пользователей">Технические работы: выкл</button>
+  <button id="dev-export" class="mini">Экспорт контента</button>
+  <button id="dev-exit" class="mini">Выйти из режима</button>
+</div>
+
+<div id="journey-bar" class="journey-bar" hidden></div>
+
+<!-- постоянная кнопка возврата к большой карте -->
+<a id="btn-home" class="home-btn hide" href="#/map" title="Вернуться к большой карте (Esc)">
+  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 L5 8 L10 13"/></svg>
+  <span>К большой карте</span>
+</a>
+
+<!-- ===================== ГЛАВНАЯ ===================== -->
+<main id="view-home" class="view">
+  <div class="home-wrap">
+    <h1 class="home-title">Refs<span class="dot">.</span>Books</h1>
+    <button id="home-start" class="start-btn">НАЧАТЬ</button>
+    <div class="home-text" id="home-text">
+      <p>Ни одна великая книга не рождается в пустоте — мировая литература похожа на единый живой разговор, который писатели ведут друг с другом сквозь столетия. Ещё со времён Античности искусство связывали с мимесисом — подражанием действительности, но не меньше литература подражает и самой себе, впитывая, переосмысляя и преображая чужие сюжеты и образы. На первый взгляд разрозненные произведения на самом деле связаны гораздо теснее, чем мы привыкли думать, образуя прочную нить от древнейших сказаний до современной прозы. Когда вы замечаете скрытую цитату, отзвук забытой поэмы или тонкий спор с предшественником, чтение перестаёт быть просто слежением за сюжетом и становится по-настоящему осмысленным. В такие минуты в знакомых текстах открывается новая глубина, а страницы приносят тихую радость узнавания — словно среди чужих эпох вы вдруг слышите родной голос. На этом сайте собраны ключевые произведения мировой литературы с подробными комментариями ко всем отсылкам внутри них, чтобы вы могли увидеть эту общую память культуры целиком.</p>
+      <p>Изучать нашу карту литературных связей можно в двух вариантах: в свободном режиме, самостоятельно выбирая любые книги, или в режиме чтения по порядку. Если вы предпочтёте путь по порядку, сначала нужно будет выбрать масштаб маршрута — единую глобальную хронологию или путешествие по отдельным временным эпохам. Сразу после этого сайт сам перенесёт вас к самому первому произведению выбранной хронологической цепочки. По завершении чтения откроется переход к тем произведениям, на которые внутри прочитанной книги были сделаны отсылки. Если же и в этих «отсылочных» текстах встретятся отсылки на другие сочинения, перед вами возникнет развилка: вы сможете шагнуть дальше в следующую боковую отсылочную линию или вернуться назад к основной хронологии. Выбирайте направление и открывайте мировую литературу заново — такой живой и цельной, какой её видели сами авторы.</p>
+    </div>
+    <div class="ad-slot ad-home" data-ad-slot="home"></div>
+  </div>
+</main>
+
+<!-- ===================== КАРТА ===================== -->
+<main id="view-map" class="view">
+  <div id="stage">
+    <div id="world">
+      <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="bands"></div>
+      <div id="nodes"></div>
+    </div>
+    <div id="map-title" class="map-title"></div>
+    <div id="minimap" class="minimap"><canvas id="minimap-canvas" width="200" height="140"></canvas></div>
+  </div>
+  <div id="intro-card" class="intro-card" hidden></div>
+</main>
+
+<!-- ===================== СТРАНИЦА ПРОИЗВЕДЕНИЯ ===================== -->
+<main id="view-work" class="view">
+  <div class="work-wrap">
+    <header class="work-head">
+      <h1 id="w-title"></h1>
+      <div id="w-meta" class="meta"></div>
+      <div id="w-tags" class="tags"></div>
+      <p id="w-ann" class="w-ann"></p>
+    </header>
+
+    <!-- панель разработчика для этого произведения -->
+    <section id="w-dev" class="dev-panel dev-only"></section>
+
+    <div class="work-body">
+      <div class="reader-row">
+        <aside class="ad-slot ad-side" data-ad-slot="reader-left"></aside>
+
+        <section class="doc-pane" id="doc-pane">
+          <div class="pane-head">
+            <span id="w-progress-label">Текст произведения</span>
+            <div class="pane-actions" id="reader-actions">
+              <button id="rd-continue" class="mini" title="Вернуться к месту, где вы остановились">↧ Где остановился</button>
+              <button id="rd-download" class="mini" title="Скачать текст">Скачать</button>
+              <button id="rd-full" class="mini" title="Читать на весь экран">⛶ Полный экран</button>
+            </div>
+          </div>
+          <div class="rd-progress"><i id="rd-bar"></i></div>
+          <div id="w-doc-holder" class="doc-holder"></div>
+          <button id="rd-exit" hidden title="Выйти из полного экрана">✕</button>
+          <div class="pane-foot" id="rd-foot">
+            <button id="rd-finish" class="tb prim">Я дочитал(а) книгу</button>
+          </div>
+        </section>
+
+        <aside class="ad-slot ad-side" data-ad-slot="reader-right"></aside>
+      </div>
+
+      <section class="lists-pane">
+        <div class="list-block" id="bm-block">
+          <h2 class="list-title static"><span class="mark bm">❚</span> Закладки <span class="cnt" id="bm-cnt">0</span></h2>
+          <ol id="bm-list" class="reflist"></ol>
+          <p class="empty" id="bm-empty">Правый клик по тексту — поставить закладку: главную или под номером с цветом. Где вы остановились, сайт запоминает сам. Чтобы выделить или подчеркнуть цитату — выделите текст мышью.</p>
+        </div>
+
+        <div class="list-block">
+          <h2 class="list-title out" id="w-out-title">
+            <span class="mark">→</span> На что ссылается
+            <span class="cnt" id="w-out-cnt">0</span>
+            <span class="go">карта отсылок</span>
+          </h2>
+          <ol id="w-out" class="reflist"></ol>
+          <p class="empty" id="w-out-empty">Отсылки пока не добавлены.</p>
+        </div>
+
+        <div class="list-block">
+          <h2 class="list-title in" id="w-in-title">
+            <span class="mark">←</span> На него ссылаются
+            <span class="cnt" id="w-in-cnt">0</span>
+            <span class="go">карта ссылок</span>
+          </h2>
+          <ol id="w-in" class="reflist"></ol>
+          <p class="empty" id="w-in-empty">Пока никто не ссылается.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- ===================== ПРОФИЛЬ ===================== -->
+<main id="view-profile" class="view page"><div class="page-wrap" id="profile-root"></div></main>
+
+<!-- ===================== ПОДПИСКА ===================== -->
+<main id="view-subscribe" class="view page"><div class="page-wrap" id="subscribe-root"></div></main>
+
+<!-- ===================== КАТАЛОГ ===================== -->
+<main id="view-catalog" class="view page"><div class="page-wrap" id="catalog-root"></div></main>
+
+<!-- ===================== РОЗЫГРЫШ ===================== -->
+<main id="view-raffle" class="view page"><div class="page-wrap" id="raffle-root"></div></main>
+
+<!-- меню закладки (правый клик по тексту) -->
+<div id="bm-pop" class="bm-pop" hidden></div>
+
+<!-- плавающее облако с аннотацией -->
+<div id="ann-tip" class="ann-tip" hidden></div>
+
+<!-- панель выделения цитаты -->
+<div id="hl-bar" class="hl-bar" hidden>
+  <button data-hl="mark">Выделить</button>
+  <button data-hl="under">Подчеркнуть</button>
+</div>
+<div id="hl-del" class="hl-bar" hidden><button data-hl-del>Убрать выделение</button></div>
+
+<!-- универсальное окно выбора -->
+<dialog id="ask"><div class="dlg-form ask" id="ask-body"></div></dialog>
+
+<!-- ===================== ДИАЛОГ ЗАГРУЗКИ (разработчик) ===================== -->
+<dialog id="dlg">
+  <form method="dialog" class="dlg-form">
+    <h2>Загрузить произведение</h2>
+    <p class="dlg-hint">HTML-документ с текстом и отсылками (эталон — «Фауст — с отсылками»). Отсылки будут разобраны, карта достроится. Можно загрузить и документ без отсылок — только текст.</p>
+    <label class="field"><span>Название произведения</span>
+      <input id="dlg-title" type="text" placeholder="Например: Фауст" required></label>
+    <label class="field"><span>Автор <em>(необязательно)</em></span>
+      <input id="dlg-author" type="text"></label>
+    <div class="field"><span>Документ</span>
+      <div class="drop">
+        <input id="dlg-file" type="file" accept=".html,.htm,text/html" hidden>
+        <button type="button" class="tb" id="dlg-pick">Выбрать файл…</button>
+        <span id="dlg-filename" class="fname">файл не выбран</span>
+      </div></div>
+    <label class="field"><span>или ссылка на текст <em>(необязательно)</em></span>
+      <input id="dlg-url" type="url" placeholder="https://…"></label>
+    <div id="dlg-status" class="dlg-status"></div>
+    <div class="dlg-foot">
+      <button value="cancel" class="tb" formnovalidate>Отмена</button>
+      <button value="ok" class="tb prim">Загрузить</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== СПРАВКА ===================== -->
+<dialog id="help">
+  <form method="dialog" class="dlg-form help">
+    <h2>Как устроена карта</h2>
+    <ol class="helplist">
+      <li><b>Глобальная хронология</b> — одна цепь от «Эпоса о Гильгамеше» до «1Q84». <b>По эпохам</b> — шесть эпох со своими цепочками; альтернативные маршруты идут параллельными линиями над главной.</li>
+      <li><b>Плашка слева от прямоугольника</b> раскрывает отсылки произведения — влево-вниз. У источника тоже может быть своя плашка.</li>
+      <li><b>Клик по прямоугольнику</b> — страница произведения. <b>Наведение</b> — краткая аннотация.</li>
+      <li><b>Кружок у названия</b> — отметка «прочитано»; прямоугольник зеленеет везде, где встречается это произведение.</li>
+      <li><b>WASD / стрелки</b> — двигать карту (Shift — быстрее), <b>колесо</b> — масштаб, <b>Backspace</b> — отменить последнее действие, <b>Esc</b> — к большой карте.</li>
+      <li>В тексте: <b>выделите фрагмент</b>, чтобы подчеркнуть или выделить цитату; <b>«＋ Закладка»</b> — отметить место. Где вы остановились, сайт запоминает сам.</li>
+    </ol>
+    <div class="dlg-foot"><button value="ok" class="tb prim">Понятно</button></div>
+  </form>
+</dialog>
+
+<!-- заглушка «технические работы» -->
+<div id="maint" class="maint" hidden>
+  <div class="maint-box">
+    <div class="maint-ico">🛠</div>
+    <h1>Технические работы</h1>
+    <p>Сайт временно недоступен. Мы обновляем его и скоро вернёмся — загляните чуть позже.</p>
+  </div>
+</div>
+
+<script src="js/parser.js"></script>
+<script src="js/docstore.js"></script>
+<script src="js/account.js"></script>
+<script src="js/payments.js"></script>
+<script src="js/raffle.js"></script>
+<script src="js/ads.js"></script>
+<script src="js/spine.js"></script>
+<script src="js/epochs.js"></script>
+<script src="js/annotations.js"></script>
+<script src="js/seed-faust.js"></script>
+<script src="js/content.js"></script>
+<script src="js/layout.js"></script>
+<script src="js/reader.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style></head><body>
+<iframe id="f" src="../index.html#/map"></iframe>
+<script>
+var f=document.getElementById('f');
+f.onload=function(){setTimeout(function(){
+ var W=f.contentWindow;
+ W.Account.data.prefs.mapView='epochs';W.Account.save();
+ W.location.hash='#/catalog';
+ setTimeout(function(){W.location.hash='#/map';
+  setTimeout(function(){
+   var b=W.document.getElementById('btn-fit');b.click();document.title='DONE';},500);},200);
+},800);};
+</script></body></html>

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>shot</title>
+<style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style>
+</head><body>
+<iframe id="fr" src="../index.html"></iframe>
+<script>
+/* снимок экрана для ручной проверки: test/shot.html#/путь */
+var fr = document.getElementById('fr');
+fr.onload = function () {
+  setTimeout(function () {
+    var W = fr.contentWindow;
+    W.location.hash = location.hash || '#/map';
+    setTimeout(function () { document.title = 'DONE'; }, 1500);
+  }, 700);
+};
+</script>
+</body></html>
